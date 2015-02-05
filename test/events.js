@@ -373,18 +373,20 @@
     equal(obj.counter, 3, 'counter should have been incremented three times');
   });
 
-  test("callback list is not altered during trigger", 2, function () {
-    var counter = 0, obj = _.extend({}, Backbone.Events);
-    var incr = function(){ counter++; };
-    obj.on('event', function(){ obj.on('event', incr).on('all', incr); })
-    .trigger('event');
-    equal(counter, 0, 'bind does not alter callback list');
-    obj.off()
-    .on('event', function(){ obj.off('event', incr).off('all', incr); })
-    .on('event', incr)
-    .on('all', incr)
-    .trigger('event');
-    equal(counter, 2, 'unbind does not alter callback list');
+  test("callback list never skips a still bound callback", 3, function () {
+      var counter = 0, obj = _.extend({}, Backbone.Events);
+      var fn = function(){};
+      var fnOff = function(){ obj.off('event', fn); };
+      var incr = function(){ counter++; };
+      var incrOn = function(){ obj.on('event all', incr); };
+
+      obj.on('event', incr).on('event', incrOn).on('event', incr).trigger('event');
+      equal(counter, 3, 'trigger with on does not skip callbacks');
+
+      obj.off().on('event', incr).on('event', fn).on('event', fnOff).on('event', incr).trigger('event');
+      equal(counter, 5, 'trigger with off does skip callbacks');
+      obj.off().on('event', incr).on('event', fnOff).on('event', fn).on('event', incr).trigger('event');
+      equal(counter, 7, 'trigger with off does skip callbacks');
   });
 
   test("#1282 - 'all' callback list is retrieved after each event.", 1, function() {
