@@ -104,6 +104,14 @@
     return memo;
   };
 
+  var EventNode = function(callback, context, ctx) {
+    this.callback = callback;
+    this.context = context;
+    this.ctx = context || ctx;
+    this.skip = false;
+    this.next = void 0;
+  };
+
   // Bind an event to a `callback` function. Passing `"all"` will bind
   // the callback to all events fired.
   Events.on = function(name, callback, context) {
@@ -138,9 +146,8 @@
   var onApi = function(events, name, callback, context, ctx) {
     if (callback) {
       var list = events[name] || (events[name] = {tail: void 0, next: void 0});
-      var ev = {callback: callback, context: context, ctx: context || ctx, next: void 0, skip: false};
       var tail = list.tail || list;
-      list.tail = tail.next = ev;
+      list.tail = tail.next = new EventNode(callback, context, ctx);
     }
     return events;
   };
@@ -316,11 +323,11 @@
   var triggerEvents = function(events, args) {
     var ev = events, a1 = args[0], a2 = args[1], a3 = args[2];
     switch (args.length) {
-      case 0: while ((ev = ev.next)) ev.callback.call(ev.ctx); return;
-      case 1: while ((ev = ev.next)) ev.callback.call(ev.ctx, a1); return;
-      case 2: while ((ev = ev.next)) ev.callback.call(ev.ctx, a1, a2); return;
-      case 3: while ((ev = ev.next)) ev.callback.call(ev.ctx, a1, a2, a3); return;
-      default: while ((ev = ev.next)) ev.callback.apply(ev.ctx, args); return;
+      case 0: while ((ev = ev.next)) if (!ev.skip) ev.callback.call(ev.ctx); return;
+      case 1: while ((ev = ev.next)) if (!ev.skip) ev.callback.call(ev.ctx, a1); return;
+      case 2: while ((ev = ev.next)) if (!ev.skip) ev.callback.call(ev.ctx, a1, a2); return;
+      case 3: while ((ev = ev.next)) if (!ev.skip) ev.callback.call(ev.ctx, a1, a2, a3); return;
+      default: while ((ev = ev.next)) if (!ev.skip) ev.callback.apply(ev.ctx, args); return;
     }
   };
 
