@@ -86,20 +86,20 @@
   // maps `{event: callback}`), reducing them by manipulating `events`.
   // Passes a normalized (single event name and callback), as well as the `context`
   // and `ctx` arguments to `iteratee`.
-  var eventsApi = function(iteratee, memo, name, callback, context, ctx) {
+  var eventsApi = function(iteratee, memo, name, callback, context, ctx, listening) {
     var i = 0, names, length;
     if (name && typeof name === 'object') {
       // Handle event maps.
       for (names = _.keys(name), length = names.length; i < length; i++) {
-        memo = iteratee(memo, names[i], name[names[i]], context, ctx);
+        memo = iteratee(memo, names[i], name[names[i]], context, ctx, listening);
       }
     } else if (name && eventSplitter.test(name)) {
       // Handle space separated event names.
       for (names = name.split(eventSplitter), length = names.length; i < length; i++) {
-        memo = iteratee(memo, names[i], callback, context, ctx);
+        memo = iteratee(memo, names[i], callback, context, ctx, listening);
       }
     } else {
-      memo = iteratee(memo, name, callback, context, ctx);
+      memo = iteratee(memo, name, callback, context, ctx, listening);
     }
     return memo;
   };
@@ -119,26 +119,26 @@
     var listeningTo = this._listeningTo || (this._listeningTo = {});
     var listening = listeningTo[id];
 
-    // This object is not listening to any other events on `obj` yet.
-    // Setup the necessary references to track the listening callbacks.
-    if (!listening) {
-      listening = listeningTo[id] = {obj: obj, events: {}};
-      id = this._listenId || (this._listenId = _.uniqueId('l'));
-      var listeners = obj._listeners || (obj._listeners = {});
-      listeners[id] = this;
+    if (!listening || !listening.obj) {
+        var lid = this._listenId || (this._listenId = _.uniqueId('l'));
+        listening = listeningTo[id] = {obj: obj, listenerId: lid, count: 0};
     }
 
     // Bind callbacks on obj, and keep track of them on listening.
-    obj.on(name, callback, this);
-    listening.events = eventsApi(onApi, listening.events, name, callback);
+    obj._events = eventsApi(onApi, obj._events || {}, name, callback, this, obj, listening);
     return this;
   };
 
   // The reducing API that adds a callback to the `events` object.
-  var onApi = function(events, name, callback, context, ctx) {
+  var onApi = function(events, name, callback, context, ctx, listening) {
     if (callback) {
       var handlers = events[name] || (events[name] = []);
-      handlers.push({callback: callback, context: context, ctx: context || ctx});
+      handlers.push({callback: callback, context: context, ctx: context || ctx, listening: listening});
+      if (listening) {
+        listening.count++;
+        var listeners = ctx._listeners || (ctx._listeners = {});
+        listeners[listening.listenerId] = listening;
+      }
     }
     return events;
   };
@@ -149,43 +149,55 @@
   // callbacks for all events.
   Events.off =  function(name, callback, context) {
     if (!this._events) return this;
-    this._events = eventsApi(offApi, this._events, name, callback, context);
-
-    var listeners = this._listeners;
-    if (listeners) {
-      // Listeners always bind themselves as the context, so if `context`
-      // is passed, narrow down the search to just that listener.
-      var ids = context != null ? [context._listenId] : _.keys(listeners);
-
-      for (var i = 0, length = ids.length; i < length; i++) {
-        var listener = listeners[ids[i]];
-
-        // Bail out if listener isn't listening.
-        if (!listener) break;
-
-        // Tell each listener to stop, without infinitely calling `#off`.
-        internalStopListening(listener, this, name, callback);
-      }
-      if (_.isEmpty(listeners)) this._listeners = void 0;
-    }
+    this._events = eventsApi(offApi, this._events, name, callback, context, this._listeners);
+    if (_.isEmpty(this._listeners)) this._listeners = void 0;
     return this;
   };
 
   // Tell this object to stop listening to either specific events ... or
   // to every object it's currently listening to.
   Events.stopListening =  function(obj, name, callback) {
-    // Use an internal stopListening, telling it to call off on `obj`.
-    if (this._listeningTo) internalStopListening(this, obj, name, callback, true);
+    var listeningTo = this._listeningTo;
+    if (!listeningTo) return this;
+
+    var ids = obj ? [obj._listenId] : _.keys(listeningTo);
+    for (var i = 0, length = ids.length; i < length; i++) {
+      var id = ids[i];
+      var listening = listeningTo[id];
+
+      // If listening doesn't exist, this object is not currently
+      // listening to obj. Break out early.
+      if (!listening) break;
+
+      if (listening.obj) listening.obj.off(name, callback, this);
+      if (listening.count === 0) delete listeningTo[id];
+    }
+    if (_.isEmpty(listeningTo)) this._listeningTo = void 0;
     return this;
   };
 
   // The reducing API that removes a callback from the `events` object.
-  var offApi = function(events, name, callback, context) {
+  var offApi = function(events, name, callback, context, listeners) {
+    // No events to consider.
+    if (!events) return;
+
+    var i = 0, length, listening;
+
     // Remove all callbacks for all events.
-    if (!events || !name && !context && !callback) return;
+    if (!name && !context && !callback) {
+        // Kill any listeners
+        var ids = _.keys(listeners);
+        for (length = ids.length; i < length; i++) {
+          listening = listeners[ids[i]];
+          listening.count = 0;
+          delete listeners[listening.listenerId];
+          delete listening.obj;
+        }
+        return;
+    }
 
     var names = name ? [name] : _.keys(events);
-    for (var i = 0, length = names.length; i < length; i++) {
+    for (length = names.length; i < length; i++) {
       name = names[i];
       var handlers = events[name];
 
@@ -194,16 +206,18 @@
 
       // Find any remaining events.
       var remaining = [];
-      if (callback || context) {
-        for (var j = 0, k = handlers.length; j < k; j++) {
-          var handler = handlers[j];
-          if (
-            callback && callback !== handler.callback &&
-              callback !== handler.callback._callback ||
-                context && context !== handler.context
-          ) {
-            remaining.push(handler);
-          }
+      for (var j = 0, k = handlers.length; j < k; j++) {
+        var handler = handlers[j];
+        listening = handler.listening;
+        if (
+          callback && callback !== handler.callback &&
+            callback !== handler.callback._callback ||
+              context && context !== handler.context
+        ) {
+          remaining.push(handler);
+        } else if (listening && --listening.count === 0) {
+          delete listeners[listening.listenerId];
+          delete listening.obj;
         }
       }
 
@@ -215,30 +229,6 @@
       }
     }
     if (!_.isEmpty(events)) return events;
-  };
-
-  var internalStopListening = function(listener, obj, name, callback, offEvents) {
-    var listeningTo = listener._listeningTo;
-    var ids = obj ? [obj._listenId] : _.keys(listeningTo);
-    for (var i = 0, length = ids.length; i < length; i++) {
-      var id = ids[i];
-      var listening = listeningTo[id];
-
-      // If listening doesn't exist, this object is not currently
-      // listening to obj. Break out early.
-      if (!listening) break;
-      obj = listening.obj;
-      if (offEvents) obj._events = eventsApi(offApi, obj._events, name, callback, listener);
-
-      // Events will only ever be falsey if all the event callbacks
-      // are removed. If so, stop delete the listening.
-      var events = eventsApi(offApi, listening.events, name, callback);
-      if (!events) {
-        delete listeningTo[id];
-        delete listening.obj._listeners[listener._listenId];
-      }
-    }
-    if (_.isEmpty(listeningTo)) listener._listeningTo = void 0;
   };
 
   // Bind an event to only be triggered a single time. After the first time

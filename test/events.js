@@ -224,15 +224,15 @@
     var fn = function() {};
     a.listenTo(b, 'event', fn);
     b.off('event');
-    equal(_.keys(a._listeningTo).length, 0);
+    equal(_.compact(_.pluck(a._listeningTo, 'obj')).length, 0);
     equal(_.keys(b._listeners).length, 0);
     a.listenTo(b, 'event', fn);
     b.off(null, fn);
-    equal(_.keys(a._listeningTo).length, 0);
+    equal(_.compact(_.pluck(a._listeningTo, 'obj')).length, 0);
     equal(_.keys(b._listeners).length, 0);
     a.listenTo(b, 'event', fn);
     b.off(null, null, a);
-    equal(_.keys(a._listeningTo).length, 0);
+    equal(_.compact(_.pluck(a._listeningTo, 'obj')).length, 0);
     equal(_.keys(b._listeners).length, 0);
   });
 
