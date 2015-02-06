@@ -287,12 +287,18 @@
   // (unless you're listening on `"all"`, which will cause your callback to
   // receive the true name of the event as the first argument).
   Events.trigger =  function(name) {
-    if (!this._events) return this;
+    var events = this._events;
+    if (!events || !events.count) return this;
     var args = arguments.length > 1 ? slice.call(arguments, 1) : [];
+
+    var alreadyTriggering = events.alreadyTriggering;
+    events.triggering = true;
 
     // Pass `triggerSentinel` as "callback" param. If `name` is an object,
     // `triggerApi` will be passed the property's value instead.
-    eventsApi(triggerApi, this, name, triggerSentinel, args);
+    eventsApi(triggerApi, events.lists, name, triggerSentinel, args);
+
+    if (!alreadyTriggering) events.triggering = false;
     return this;
   };
 
@@ -300,26 +306,22 @@
   var triggerSentinel = {};
 
   // Handles triggering the appropriate event callbacks.
-  var triggerApi = function(obj, name, sentinel, args) {
-    var events = obj._events;
-    if (events) {
-      var lists = events.lists;
-      // If `sentinel` is not the trigger sentinel, trigger was called
-      // with a `{event: value}` object, and it is `value`.
-      if (sentinel !== triggerSentinel) args = [sentinel].concat(args);
+  var triggerApi = function(lists, name, sentinel, args) {
+    // If `sentinel` is not the trigger sentinel, trigger was called
+    // with a `{event: value}` object, and it is `value`.
+    if (sentinel !== triggerSentinel) args = [sentinel].concat(args);
 
-      var list = lists[name];
-      var allList = lists.all;
-      if (list) {
-        triggerEvents(list, args);
-        if (!list.next) delete lists[name];
-      }
-      if (allList) {
-        triggerEvents(allList, [name].concat(args));
-        if (!allList.next) delete lists.all;
-      }
+    var list = lists[name];
+    var allList = lists.all;
+    if (list) {
+      triggerEvents(list, args);
+      if (!list.next) delete lists[name];
     }
-    return obj;
+    if (allList) {
+      triggerEvents(allList, [name].concat(args));
+      if (!allList.next) delete lists.all;
+    }
+    return lists;
   };
 
   // A difficult-to-believe, but optimized internal dispatch function for
