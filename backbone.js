@@ -78,33 +78,6 @@
   //
   var Events = Backbone.Events = {};
 
-  var EventsList = function() {
-    this.count = 0;
-    this.triggering = false;
-    this.lists = {};
-  };
-
-  var EventList = function() {
-    this.count = 0;
-    this.listeners = {};
-    this.triggering = false;
-    this.tail = void 0;
-    this.next = void 0;
-    this.listeningNext = void 0;
-  };
-
-  var EventNode = function(callback, context, ctx, listening, prev) {
-    this.callback = callback;
-    this.context = context;
-    this.ctx = ctx;
-    this.listening = listening;
-    this.prev = prev;
-    this.next = void 0;
-    this.offed = false;
-    this.listeningNext = void 0;
-    this.listeningPrev = void 0;
-  };
-
   // Regular expression used to split event strings.
   var eventSplitter = /\s+/;
 
@@ -140,7 +113,7 @@
   // An internal use `on` function, used to guard the `listening` argument from
   // the public API.
   var internalOn = function(obj, name, callback, context, listening) {
-    var events = obj._events || new EventsList();
+    var events = obj._events || {count: 0, triggering: false, lists: {}};
     obj._events = eventsApi(onApi, events, name, callback, context, obj, listening);
 
     if (listening) {
@@ -174,16 +147,33 @@
   // The reducing API that adds a callback to the `events` object.
   var onApi = function(events, name, callback, context, ctx, listening) {
     if (callback) {
-      var list = events.lists[name] || (events.lists[name] = new EventList());
+      var list = events.lists[name] || (events.lists[name] = {
+        listeners: {},
+        count: 0,
+        triggering: false,
+        tail: void 0,
+        next: void 0
+      });
       if (++list.count === 1) events.count++;
 
       var tail = list.tail || list;
-      var ev = new EventNode(callback, context, context || ctx, listening, tail);
+      var ev = {
+        callback: callback,
+        context: context,
+        ctx: context || ctx,
+        listening: listening,
+        prev: tail,
+        next: void 0,
+        offed: false,
+        listeningNext: void 0,
+        listeningPrev: void 0
+      };
+
       list.tail = tail.next = ev;
 
       if (listening) {
         list.listeners[listening.id] = listening;
-        list = listening.lists[name] || (listening.lists[name] = new EventList());
+        list = listening.lists[name] || (listening.lists[name] = {count: 0, tail: void 0, listeningNext: void 0});
         if (++list.count === 1) listening.count++;
 
         tail = list.tail || list;
