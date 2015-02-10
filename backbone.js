@@ -359,9 +359,10 @@
     var events = this._events;
     if (!events || !events.count) return this;
 
-    var length = Math.max(0, arguments.length - 1);
-    var args = Array(length);
-    for (var i = 0; i < length; i++) args[i] = arguments[i + 1];
+    /* var length = Math.max(0, arguments.length - 1); */
+    /* var args = Array(length); */
+    /* for (var i = 0; i < length; i++) args[i] = arguments[i + 1]; */
+    var args = arguments.length > 1 ? slice.call(arguments, 1) : [];
 
     var alreadyTriggering = events.alreadyTriggering;
     events.triggering = true;
