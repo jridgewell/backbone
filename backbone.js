@@ -78,6 +78,33 @@
   //
   var Events = Backbone.Events = {};
 
+  var EventsList = function() {
+    this.count = 0;
+    this.triggering = false;
+    this.lists = {};
+  };
+
+  var EventList = function() {
+    this.count = 0;
+    this.listeners = {};
+    this.triggering = false;
+    this.tail = void 0;
+    this.next = void 0;
+    this.listeningNext = void 0;
+  };
+
+  var EventNode = function(callback, context, ctx, listening, prev) {
+    this.callback = callback;
+    this.context = context;
+    this.ctx = ctx;
+    this.listening = listening;
+    this.prev = prev;
+    this.next = void 0;
+    this.offed = false;
+    this.listeningNext = void 0;
+    this.listeningPrev = void 0;
+  };
+
   // Regular expression used to split event strings.
   var eventSplitter = /\s+/;
 
@@ -113,7 +140,7 @@
   // An internal use `on` function, used to guard the `listening` argument from
   // the public API.
   var internalOn = function(obj, name, callback, context, listening) {
-    var events = obj._events || {count: 0, triggering: false, lists: {}};
+    var events = obj._events || new EventsList();
     obj._events = eventsApi(onApi, events, name, callback, context, obj, listening);
 
     if (listening) {
@@ -136,7 +163,7 @@
     // Setup the necessary references to track the listening callbacks.
     if (!listening) {
       var thisId = this._listenId || (this._listenId = _.uniqueId('l'));
-      listening = listeningTo[id] = {obj: obj, objId: id, id: thisId, listeningTo: listeningTo, count: 0};
+      listening = listeningTo[id] = {obj: obj, objId: id, id: thisId, listeningTo: listeningTo, count: 0, lists: {}};
     }
 
     // Bind callbacks on obj, and keep track of them on listening.
@@ -147,29 +174,22 @@
   // The reducing API that adds a callback to the `events` object.
   var onApi = function(events, name, callback, context, ctx, listening) {
     if (callback) {
-      var list = events.lists[name];
-      if (!list) {
-        list = events.lists[name] = {
-          count: 0,
-          triggering: false,
-          tail: void 0,
-          next: void 0
-        };
-      }
-      if (!list.next) events.count++;
-      list.count++;
-      if (listening) listening.count++;
+      var list = events.lists[name] || (events.lists[name] = new EventList());
+      if (++list.count === 1) events.count++;
 
       var tail = list.tail || list;
-      list.tail = tail.next = {
-        callback: callback,
-        context: context,
-        ctx: context || ctx,
-        listening: listening,
-        prev: tail,
-        next: void 0,
-        offed: false
-      };
+      var ev = new EventNode(callback, context, context || ctx, listening, tail);
+      list.tail = tail.next = ev;
+
+      if (listening) {
+        list.listeners[listening.id] = listening;
+        list = listening.lists[name] || (listening.lists[name] = new EventList());
+        if (++list.count === 1) listening.count++;
+
+        tail = list.tail || list;
+        ev.listeningPrev = tail;
+        list.tail = tail.listeningNext = ev;
+      }
     }
     return events;
   };
@@ -179,9 +199,15 @@
   // callbacks for the event. If `name` is null, removes all bound
   // callbacks for all events.
   Events.off =  function(name, callback, context) {
-    if (!this._events) return this;
-    this._events = eventsApi(offApi, this._events, name, callback, context, this._listeners);
-    return this;
+    return internalOff(this, name, callback, context);
+  };
+
+  // An internal use `off` function, used to guard the `listening` argument from
+  // the public API.
+  var internalOff = function(obj, name, callback, context, listening) {
+    if (!obj._events) return obj;
+    obj._events = eventsApi(offApi, obj._events, name, callback, context, listening, obj._listeners);
+    return obj;
   };
 
   // Tell this object to stop listening to either specific events ... or
@@ -200,25 +226,23 @@
       // listening to obj. Break out early.
       if (!listening) break;
 
-      listening.obj.off(name, callback, this);
-      if (!listening.count) delete listeningTo[id];
+      internalOff(listening.obj, name, callback, this, listening);
     }
 
     return this;
   };
 
   // The reducing API that removes a callback from the `events` object.
-  var offApi = function(events, name, callback, context, listeners) {
+  var offApi = function(events, name, callback, context, listening, listeners) {
     // Remove all callbacks for all events.
     if (!events || !events.count) return events;
 
-    var i = 0, length, listening;
+    var i = 0, length, ids, id;
 
-    // Delete all event listeners and "drop" events.
     if (!name && !callback && !context && !events.triggering) {
-      var ids = _.keys(listeners);
+      ids = _.keys(listeners);
       for (length = ids.length; i < length; i++) {
-        var id = ids[i];
+        id = ids[i];
         listening = listeners[id];
         delete listeners[id];
         delete listening.listeningTo[listening.objId];
@@ -227,40 +251,71 @@
     }
 
     var lists = events.lists;
+    var listeningLists = listening && listening.lists;
     var names = name ? [name] : _.keys(lists);
     for (length = names.length; i < length; i++) {
       name = names[i];
       var list = lists[name];
+      var listeningList = listeningLists && listeningLists[name];
+      var nextProp = listeningList ? 'listeningNext' : 'next';
 
       // Bail out if there are no events stored.
-      if (!list || !list.next) continue;
+      if (!list || list.count === 0) continue;
+
+      if (!callback && !context && !list.triggering) {
+        ids = _.keys(list.listeners);
+        for (length = ids.length; i < length; i++) {
+          id = ids[i];
+          listening = listeners[id];
+          delete listening.lists[name];
+          if (--listening.count === 0) {
+            delete listening.listeningTo[listening.objId];
+            delete listeners[listening.id];
+            delete list.listeners[listening.id];
+          }
+        }
+        events.count--;
+        delete lists[name];
+        continue;
+      }
+
 
       // Find any remaining events.
-      var ev = list, tail = list;
-      while ((ev = ev.next)) {
-        if (
+      var ev = (listeningList || list);
+      while ((ev = ev[nextProp])) {
+        if (!(
           callback && callback !== ev.callback &&
             callback !== ev.callback._callback ||
               context && context !== ev.context
-        ) {
-          tail = ev;
-        } else {
+        )) {
           list.count--;
-          var next = tail.next = ev.next;
-          if (next) next.prev = tail;
+          var next = ev.prev.next = ev.next;
+          if (next) next.prev = ev.prev;
           ev.offed = true;
 
+          if (ev === list.tail) list.tail = ev.prev;
+
           listening = ev.listening;
-          if (listening && --listening.count === 0) {
-            delete listening.listeningTo[listening.objId];
-            delete listeners[listening.id];
+          if (listening) {
+            next = ev.listeningPrev.listeningNext = ev.listeningNext;
+            if (next) next.listeningPrev = ev.listeningPrev;
+
+            listeningList = listening.lists[name];
+            if (listeningList.tail === ev) listeningList.tail = ev.listeningPrev;
+            if (--listeningList.count === 0) {
+              delete listening.lists[name];
+              if (--listening.count === 0) {
+                delete listening.listeningTo[listening.objId];
+                delete listeners[listening.id];
+                delete list.listeners[listening.id];
+              }
+            }
           }
         }
       }
 
       // Update tail event if the list has any events.  Otherwise, clean up.
-      list.tail = tail;
-      if (tail === list) {
+      if (list.count === 0) {
         events.count--;
         if (!list.triggering) delete lists[name];
       }
@@ -303,7 +358,10 @@
   Events.trigger =  function(name) {
     var events = this._events;
     if (!events || !events.count) return this;
-    var args = arguments.length > 1 ? slice.call(arguments, 1) : [];
+
+    var length = Math.max(0, arguments.length - 1);
+    var args = Array(length);
+    for (var i = 0; i < length; i++) args[i] = arguments[i + 1];
 
     var alreadyTriggering = events.alreadyTriggering;
     events.triggering = true;
@@ -329,11 +387,11 @@
     var allList = lists.all;
     if (list) {
       triggerEvents(list, args);
-      if (!list.next) delete lists[name];
+      if (list.count === 0) delete lists[name];
     }
     if (allList) {
       triggerEvents(allList, [name].concat(args));
-      if (!allList.next) delete lists.all;
+      if (allList.count === 0) delete lists.all;
     }
     return lists;
   };
