@@ -148,7 +148,7 @@
   var onApi = function(events, name, callback, context, ctx, listening) {
     if (callback) {
       var list = events.lists[name] || (events.lists[name] = {
-        listeners: {},
+        /* listeners: {}, */
         count: 0,
         triggering: false,
         tail: void 0,
@@ -172,7 +172,7 @@
       list.tail = tail.next = ev;
 
       if (listening) {
-        list.listeners[listening.id] = listening;
+        /* list.listeners[listening.id] = listening; */
         list = listening.lists[name] || (listening.lists[name] = {count: 0, tail: void 0, listeningNext: void 0});
         if (++list.count === 1) listening.count++;
 
@@ -252,22 +252,22 @@
       // Bail out if there are no events stored.
       if (!list || list.count === 0) continue;
 
-      if (!callback && !context && !list.triggering) {
-        ids = _.keys(list.listeners);
-        for (length = ids.length; i < length; i++) {
-          id = ids[i];
-          listening = listeners[id];
-          delete listening.lists[name];
-          if (--listening.count === 0) {
-            delete listening.listeningTo[listening.objId];
-            delete listeners[listening.id];
-            delete list.listeners[listening.id];
-          }
-        }
-        events.count--;
-        delete lists[name];
-        continue;
-      }
+      /* if (!callback && !context && !list.triggering) { */
+        /* ids = _.keys(list.listeners); */
+        /* for (length = ids.length; i < length; i++) { */
+          /* id = ids[i]; */
+          /* listening = listeners[id]; */
+          /* delete listening.lists[name]; */
+          /* if (--listening.count === 0) { */
+            /* delete listening.listeningTo[listening.objId]; */
+            /* delete listeners[listening.id]; */
+            /* delete list.listeners[listening.id]; */
+          /* } */
+        /* } */
+        /* events.count--; */
+        /* delete lists[name]; */
+        /* continue; */
+      /* } */
 
 
       // Find any remaining events.
@@ -297,7 +297,7 @@
               if (--listening.count === 0) {
                 delete listening.listeningTo[listening.objId];
                 delete listeners[listening.id];
-                delete list.listeners[listening.id];
+                /* delete list.listeners[listening.id]; */
               }
             }
           }
