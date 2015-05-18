@@ -87,6 +87,9 @@
   // Regular expression used to split event strings.
   var eventSplitter = /\s+/;
 
+  // A private global variable to share between listeners and listenees.
+  var listening;
+
   // Iterates over the standard `event, callback` (as well as the fancy multiple
   // space-separated events `"change blur", callback` and jQuery-style event
   // maps `{event: callback}`), reducing them by manipulating `memo`.
@@ -113,24 +116,18 @@
   // Bind an event to a `callback` function. Passing `"all"` will bind
   // the callback to all events fired.
   Events.on = function(name, callback, context) {
-    return internalOn(this, name, callback, context);
-  };
-
-  // An internal use `on` function, used to guard the `listening` argument from
-  // the public API.
-  var internalOn = function(obj, name, callback, context, listening) {
-    obj._events = eventsApi(onApi, obj._events || {}, name, callback, {
-        context: context,
-        ctx: obj,
-        listening: listening
+    this._events = eventsApi(onApi, this._events || {}, name, callback, {
+      context: context,
+      ctx: this,
+      listening: listening
     });
 
     if (listening) {
-      var listeners = obj._listeners || (obj._listeners = {});
+      var listeners = this._listeners || (this._listeners = {});
       listeners[listening.id] = listening;
     }
 
-    return obj;
+    return this;
   };
 
   // Inversion-of-control versions of `on`. Tell *this* object to listen to
@@ -139,7 +136,7 @@
     if (!obj) return this;
     var id = obj._listenId || (obj._listenId = _.uniqueId('l'));
     var listeningTo = this._listeningTo || (this._listeningTo = {});
-    var listening = listeningTo[id];
+    listening = listeningTo[id];
 
     // This object is not listening to any other events on `obj` yet.
     // Setup the necessary references to track the listening callbacks.
@@ -149,8 +146,18 @@
     }
 
     // Bind callbacks on obj, and keep track of them on listening.
-    internalOn(obj, name, callback, this, listening);
+    var error = tryCatchOn(obj, name, callback, this);
+    listening = void 0;
+    if (error) throw error;
     return this;
+  };
+
+  var tryCatchOn = function(obj, name, callback, context) {
+    try {
+      obj.on(name, callback, context);
+    } catch (e) {
+      return e;
+    }
   };
 
   // The reducing API that adds a callback to the `events` object.
@@ -172,8 +179,8 @@
   Events.off =  function(name, callback, context) {
     if (!this._events) return this;
     this._events = eventsApi(offApi, this._events, name, callback, {
-        context: context,
-        listeners: this._listeners
+      context: context,
+      listeners: this._listeners
     });
     return this;
   };
