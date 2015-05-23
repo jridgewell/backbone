@@ -473,9 +473,6 @@
       }
       current = this.attributes, prev = this._previousAttributes;
 
-      // Check for changes of `id`.
-      if (this.idAttribute in attrs) this.id = attrs[this.idAttribute];
-
       // For each `set` attribute, update or delete the current value.
       for (attr in attrs) {
         val = attrs[attr];
@@ -487,6 +484,9 @@
         }
         unset ? delete current[attr] : current[attr] = val;
       }
+
+      // Update id
+      this.id = current[this.idAttribute];
 
       // Trigger all relevant attribute changes.
       if (!silent) {
