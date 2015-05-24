@@ -402,6 +402,33 @@
     equal(model.get('name'), undefined);
   });
 
+  test("reset", 10, function() {
+    var changed = 0;
+    var model = new Backbone.Model({id: 1, name : 'Model'});
+    model.on('change:id change:name change:test', function(){ changed++; });
+    model.on('reset', function() {
+      ok(model.hasChanged('name'));
+      ok(model.hasChanged('id'));
+    });
+    model.reset({name: 'Test'});
+    equal(changed, 2);
+    equal(model.get('name'), 'Test');
+    equal(model.get('id'), undefined);
+    equal(model.id, undefined);
+
+    model.defaults = {
+      name: 'Test',
+      test: 'ing'
+    };
+    model.off('reset').on('reset', function() {
+      ok(!model.hasChanged('name'));
+    });
+    model.reset();
+    equal(changed, 3);
+    equal(model.get('name'), 'Test');
+    equal(model.get('test'), 'ing');
+  });
+
   test("defaults", 4, function() {
     var Defaulted = Backbone.Model.extend({
       defaults: {
@@ -647,6 +674,16 @@
     this.ajaxSettings.success();
   });
 
+  test("fetch with reset", 2, function() {
+    var model = new Backbone.Model({name: 'One', test: 'ing'});
+    model.sync = function(method, model, options) {
+      options.success({name: 'Two'});
+    };
+    model.fetch({reset: true});
+    equal(model.get('name'), 'Two');
+    ok(!model.has('test'));
+  });
+
   test("destroy", 3, function() {
     doc.destroy();
     equal(this.syncArgs.method, 'delete');
@@ -703,10 +740,11 @@
     equal(model.get('a'), 100);
   });
 
-  test("validate on unset and clear", 6, function() {
+  test("validate on unset, reset, and clear", 8, function() {
     var error;
     var model = new Backbone.Model({name: "One"});
     model.validate = function(attrs) {
+      error = false;
       if (!attrs.name) {
         error = true;
         return "No thanks.";
@@ -714,15 +752,19 @@
     };
     model.set({name: "Two"});
     equal(model.get('name'), 'Two');
-    equal(error, undefined);
+    ok(!error);
     model.unset('name', {validate: true});
-    equal(error, true);
+    ok(error);
+    model.reset({test: 'Two'}, {validate: true});
+    ok(error);
     equal(model.get('name'), 'Two');
     model.clear({validate:true});
     equal(model.get('name'), 'Two');
     delete model.validate;
     model.clear();
     equal(model.get('name'), undefined);
+    model.reset({test: 'Two'});
+    equal(model.get('test'), 'Two');
   });
 
   test("validate with error callback", 8, function() {
@@ -1097,7 +1139,7 @@
     var model = new Backbone.Model();
     var options = {};
     model.clear(options);
-    ok(!options.unset);
+    ok(!options.reset);
   });
 
   test("#1122 - unset does not alter options.", 1, function() {
@@ -1105,6 +1147,13 @@
     var options = {};
     model.unset('x', options);
     ok(!options.unset);
+  });
+
+  test("#1122 - reset does not alter options.", 1, function() {
+    var model = new Backbone.Model();
+    var options = {};
+    model.reset({}, options);
+    ok(!options.reset);
   });
 
   test("#1355 - `options` is passed to success callbacks", 3, function() {

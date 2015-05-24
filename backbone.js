@@ -444,7 +444,7 @@
     // the core primitive operation of a model, updating the data and notifying
     // anyone who needs to know about the change in state. The heart of the beast.
     set: function(key, val, options) {
-      var attr, attrs, unset, changes, silent, changing, prev, current;
+      var attr, attrs, unset, reset, changes, silent, changing, prev, current;
       if (key == null) return this;
 
       // Handle both `"key", value` and `{key: value}` -style arguments.
@@ -462,6 +462,7 @@
 
       // Extract attributes and options.
       unset           = options.unset;
+      reset           = options.reset;
       silent          = options.silent;
       changes         = [];
       changing        = this._changing;
@@ -485,6 +486,16 @@
         unset ? delete current[attr] : current[attr] = val;
       }
 
+      if (reset) {
+        for (attr in current) {
+          if (!(attr in attrs)) {
+            changes.push(attr);
+            this.changed[attr] = current[attr];
+            delete current[attr];
+          }
+        }
+      }
+
       // Update id
       this.id = current[this.idAttribute];
 
@@ -505,6 +516,7 @@
           this._pending = false;
           this.trigger('change', this, options);
         }
+        if (reset) this.trigger('reset', this, options);
       }
       this._pending = false;
       this._changing = false;
@@ -519,9 +531,12 @@
 
     // Clear all attributes on the model, firing `"change"`.
     clear: function(options) {
-      var attrs = {};
-      for (var key in this.attributes) attrs[key] = void 0;
-      return this.set(attrs, _.extend({}, options, {unset: true}));
+      return this.reset({}, options);
+    },
+
+    reset: function(attrs, options) {
+      if (!_.isObject(attrs)) attrs = _.result(this, 'defaults');
+      return this.set(attrs, _.extend({validateCombined: false}, options, {reset: true}));
     },
 
     // Determine if the model has changed since the last `"change"` event.
@@ -705,7 +720,7 @@
     // returning `true` if all is well. Otherwise, fire an `"invalid"` event.
     _validate: function(attrs, options) {
       if (!options.validate || !this.validate) return true;
-      attrs = _.extend({}, this.attributes, attrs);
+      if (options.validateCombined !== false) attrs = _.extend({}, this.attributes, attrs);
       var error = this.validationError = this.validate(attrs, options) || null;
       if (!error) return true;
       this.trigger('invalid', this, error, _.extend(options, {validationError: error}));
