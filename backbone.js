@@ -387,6 +387,9 @@
     this.initialize.apply(this, arguments);
   };
 
+  var modelSetOptions = {add: true, remove: false, merge: true};
+  var modelResetOptions = {add: true, remove: true, merge: true};
+
   // Attach all inheritable methods to the Model prototype.
   _.extend(Model.prototype, Events, {
 
@@ -455,14 +458,16 @@
         (attrs = {})[key] = val;
       }
 
-      options || (options = {});
+      options = _.extend({}, modelSetOptions, options);
 
       // Run validation.
       if (!this._validate(attrs, options)) return false;
 
       // Extract attributes and options.
+      var add        = options.add;
+      var remove     = options.remove;
+      var merge      = options.merge;
       var unset      = options.unset;
-      var reset      = options.reset;
       var silent     = options.silent;
       var changes    = [];
       var changing   = this._changing;
@@ -480,6 +485,8 @@
       // For each `set` attribute, update or delete the current value.
       for (attr in attrs) {
         val = attrs[attr];
+        var currentAttr = attr in current;
+        if ((!add && !currentAttr) || (!merge && currentAttr)) continue;
         if (!_.isEqual(current[attr], val)) changes.push(attr);
         if (!_.isEqual(prev[attr], val)) {
           changed[attr] = val;
@@ -489,7 +496,7 @@
         unset ? delete current[attr] : current[attr] = val;
       }
 
-      if (reset) {
+      if (remove) {
         for (attr in current) {
           if (!(attr in attrs)) {
             changes.push(attr);
@@ -519,7 +526,6 @@
           this._pending = false;
           this.trigger('change', this, options);
         }
-        if (reset) this.trigger('reset', this, options);
       }
       this._pending = false;
       this._changing = false;
@@ -534,12 +540,15 @@
 
     // Clear all attributes on the model, firing `"change"`.
     clear: function(options) {
-      return this.reset({}, options);
+      return this.set({}, _.defaults({remove: true}, options));
     },
 
     reset: function(attrs, options) {
+      options = _.extend({validateCombined: false}, options, modelResetOptions);
       if (!_.isObject(attrs)) attrs = _.result(this, 'defaults');
-      return this.set(attrs, _.extend({validateCombined: false}, options, {reset: true}));
+      if (!this.set(attrs, options)) return false;
+      if (!options.silent) this.trigger('reset', this, options);
+      return this;
     },
 
     // Determine if the model has changed since the last `"change"` event.
@@ -579,15 +588,16 @@
       return _.clone(this._previousAttributes);
     },
 
-    // Fetch the model from the server, merging the response with the model's
-    // local attributes. Any changed attributes will trigger a "change" event.
+    // Fetch the model from the server. If the server's representation of the
+    // model differs from its current attributes, they will be overridden,
+    // triggering a `"change"` event.
     fetch: function(options) {
-      options = options ? _.clone(options) : {};
-      if (options.parse === void 0) options.parse = true;
+      options = _.extend({parse: true, reset: true}, options);
       var model = this;
       var success = options.success;
       options.success = function(resp) {
-        if (!model.set(model.parse(resp, options), options)) return false;
+        var method = options.reset ? 'reset' : 'set';
+        if (!model[method](model.parse(resp, options), options)) return false;
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
       };
@@ -762,8 +772,8 @@
   };
 
   // Default options for `Collection#set`.
-  var setOptions = {add: true, remove: true, merge: true};
-  var addOptions = {add: true, remove: false};
+  var collectionSetOptions = {add: true, remove: true, merge: true};
+  var collectionAddOptions = {add: true, remove: false};
 
   // Define the Collection's inheritable methods.
   _.extend(Collection.prototype, Events, {
@@ -789,7 +799,7 @@
 
     // Add a model, or list of models to the set.
     add: function(models, options) {
-      return this.set(models, _.extend({merge: false}, options, addOptions));
+      return this.set(models, _.extend({merge: false}, options, collectionAddOptions));
     },
 
     // Remove a model, or a list of models from the set.
@@ -807,7 +817,7 @@
     // already exist in the collection, as necessary. Similar to **Model#set**,
     // the core operation for updating the data contained by the collection.
     set: function(models, options) {
-      options = _.defaults({}, options, setOptions);
+      options = _.defaults({}, options, collectionSetOptions);
       if (options.parse) models = this.parse(models, options);
       var singular = !_.isArray(models);
       models = singular ? (models ? [models] : []) : models.slice();
