@@ -510,24 +510,6 @@
     strictEqual(Backbone.history.root, '/root/');
   });
 
-  test("Transition from hashChange to pushState.", 1, function() {
-    Backbone.history.stop();
-    location.replace('http://example.com/root#x/y');
-    Backbone.history = _.extend(new Backbone.History, {
-      location: location,
-      history: {
-        pushState: function(){},
-        replaceState: function(state, title, url){
-          strictEqual(url, '/root/x/y');
-        }
-      }
-    });
-    Backbone.history.start({
-      root: 'root',
-      pushState: true
-    });
-  });
-
   test("#1619: Router: Normalize empty root", 1, function() {
     Backbone.history.stop();
     location.replace('http://example.com/');
@@ -561,12 +543,54 @@
     Backbone.history.navigate('fragment');
   });
 
-  test("Transition from pushState to hashChange.", 1, function() {
+  test("Transition from hashChange to pushState.", 4, function() {
+    var expected;
+    Backbone.history = _.extend(new Backbone.History, {
+      location: location,
+      history: {
+        pushState: function(){},
+        replaceState: function(state, title, url){
+          strictEqual(url, expected);
+        }
+      }
+    });
+
     Backbone.history.stop();
-    location.replace('http://example.com/root/x/y?a=b');
-    location.replace = function(url) {
-      strictEqual(url, '/root#x/y?a=b');
-    };
+    location.replace('http://example.com/root#x/y');
+    expected = '/root/x/y';
+    Backbone.history.start({
+      root: 'root',
+      pushState: true
+    });
+
+    // TODO
+    Backbone.history.stop();
+    location.replace('http://example.com/root#x/y');
+    expected = '/root/x/y';
+    Backbone.history.start({
+      root: '/root/',
+      pushState: true
+    });
+
+    Backbone.history.stop();
+    location.replace('http://example.com/root/#x/y');
+    expected = '/root/x/y';
+    Backbone.history.start({
+      root: 'root',
+      pushState: true
+    });
+
+    Backbone.history.stop();
+    location.replace('http://example.com/root/#x/y');
+    expected = '/root/x/y';
+    Backbone.history.start({
+      root: '/root/',
+      pushState: true
+    });
+  });
+
+  test("Transition from pushState to hashChange.", 6, function() {
+    var expected;
     Backbone.history = _.extend(new Backbone.History, {
       location: location,
       history: {
@@ -574,8 +598,58 @@
         replaceState: null
       }
     });
+    location.replacer = location.replace;
+    location.replace = function(url) {
+      strictEqual(url, expected);
+    };
+
+    Backbone.history.stop();
+    location.replacer('http://example.com/root/x/y?a=b');
+    expected = '/root#x/y?a=b';
     Backbone.history.start({
       root: 'root',
+      pushState: true
+    });
+
+    Backbone.history.stop();
+    location.replacer('http://example.com/root/x/y?a=b');
+    expected = '/root/#x/y?a=b';
+    Backbone.history.start({
+      root: '/root/',
+      pushState: true
+    });
+
+    Backbone.history.stop();
+    location.replacer('http://example.com/root?a=b');
+    expected = '/root#?a=b';
+    Backbone.history.start({
+      root: 'root',
+      pushState: true
+    });
+
+    Backbone.history.stop();
+    location.replacer('http://example.com/root?a=b');
+    expected = '/root/#?a=b';
+    Backbone.history.start({
+      root: '/root/',
+      pushState: true
+    });
+
+    // TODO
+    Backbone.history.stop();
+    location.replacer('http://example.com/root');
+    expected = '/root';
+    Backbone.history.start({
+      root: 'root',
+      pushState: true
+    });
+
+    Backbone.history.stop();
+    location.replacer('http://example.com/root');
+    expected = '/root/';
+    debugger;
+    Backbone.history.start({
+      root: '/root/',
       pushState: true
     });
   });
@@ -610,13 +684,23 @@
   });
 
   test("#1794 - Trailing space in fragments.", 1, function() {
-    var history = new Backbone.History;
-    strictEqual(history.getFragment('fragment   '), 'fragment');
+    location = new Location('http://example.com');
+
+    Backbone.history.stop();
+    Backbone.history = _.extend(new Backbone.History, {location: location});
+    Backbone.history.start();
+    Backbone.history.navigate('fragment   ');
+    strictEqual(Backbone.history.fragment, 'fragment');
   });
 
   test("#1820 - Leading slash and trailing space.", 1, function() {
-    var history = new Backbone.History;
-    strictEqual(history.getFragment('/fragment '), 'fragment');
+    location = new Location('http://example.com');
+
+    Backbone.history.stop();
+    Backbone.history = _.extend(new Backbone.History, {location: location});
+    Backbone.history.start();
+    Backbone.history.navigate('/fragment');
+    strictEqual(Backbone.history.fragment, 'fragment');
   });
 
   test("#1980 - Optional parameters.", 2, function() {

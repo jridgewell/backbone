@@ -1531,13 +1531,26 @@
   };
 
   // Cached regex for stripping a leading hash/slash and trailing space.
-  var routeStripper = /^[#\/]|\s+$/g;
+  var routeStripper = /^[#\/]+|\s+$/g;
 
   // Cached regex for stripping leading and trailing slashes.
   var rootStripper = /^\/+|\/+$/g;
 
   // Cached regex for stripping urls of hash.
   var pathStripper = /#.*$/;
+
+  // Cached regex for combining repeated of slashes.
+  var repeatedSlashStripper = /\/+/g;
+
+  // Add a cross-platform `addEventListener` shim for older browsers.
+  var addEventListener = root.addEventListener || function (eventName, listener) {
+    return attachEvent('on' + eventName, listener);
+  };
+
+  // Add a cross-platform `removeEventListener` shim for older browsers.
+  var removeEventListener = root.removeEventListener || function (eventName, listener) {
+    return detachEvent('on' + eventName, listener);
+  };
 
   // Has the history handling already been started?
   History.started = false;
@@ -1551,15 +1564,13 @@
 
     // Are we at the app root?
     atRoot: function() {
-      var path = this.location.pathname.replace(/[^\/]$/, '$&/');
-      return path === this.root && !this.getSearch();
+      return this.getPath() === '/' && !this.getSearch();
     },
 
     // Does the pathname match the root?
     matchRoot: function() {
       var path = this.decodeFragment(this.location.pathname);
-      var root = path.slice(0, this.root.length - 1) + '/';
-      return root === this.root;
+      return path.indexOf(this._root) === 0;
     },
 
     // Unicode characters in `location.pathname` are percent encoded so they're
@@ -1573,32 +1584,32 @@
     // fragment contains `?`.
     getSearch: function() {
       var match = this.location.href.replace(/#.*/, '').match(/\?.+/);
-      return match ? match[0] : '';
+      return match ? this.decodeFragment(match[0]) : '';
     },
 
     // Gets the true hash value. Cannot use location.hash directly due to bug
     // in Firefox where location.hash will always be decoded.
     getHash: function(window) {
-      var match = (window || this).location.href.match(/#(.*)$/);
-      return match ? match[1] : '';
+      var match = (window || this).location.href.match(/#.+$/);
+      return match ? this.decodeFragment(match[0]) : '';
     },
 
     // Get the pathname and search params, without the root.
     getPath: function() {
-      var path = this.decodeFragment(
-        this.location.pathname + this.getSearch()
-      ).slice(this.root.length - 1);
-      return path.charAt(0) === '/' ? path.slice(1) : path;
+      if (!this.matchRoot()) return '';
+      var path = this.decodeFragment(this.location.pathname);
+      path = path.slice(this._root.length);
+      // Normalize to include leading slash
+      return path.charAt(0) === '/' ? path : '/' + path;
     },
 
     // Get the cross-browser normalized URL fragment from the path or hash.
-    getFragment: function(fragment) {
-      if (fragment == null) {
-        if (this._usePushState || !this._wantsHashChange) {
-          fragment = this.getPath();
-        } else {
-          fragment = this.getHash();
-        }
+    getFragment: function() {
+      var fragment;
+      if (this._usePushState || !this._wantsHashChange) {
+        fragment = this.getPath() + this.getSearch();
+      } else {
+        fragment = this.getHash();
       }
       return fragment.replace(routeStripper, '');
     },
@@ -1612,17 +1623,20 @@
       // Figure out the initial configuration. Do we need an iframe?
       // Is pushState desired ... is it available?
       this.options          = _.extend({root: '/'}, this.options, options);
-      this.root             = this.options.root;
       this._wantsHashChange = this.options.hashChange !== false;
       this._hasHashChange   = 'onhashchange' in window;
       this._useHashChange   = this._wantsHashChange && this._hasHashChange;
       this._wantsPushState  = !!this.options.pushState;
       this._hasPushState    = !!(this.history && this.history.pushState);
       this._usePushState    = this._wantsPushState && this._hasPushState;
-      this.fragment         = this.getFragment();
 
-      // Normalize root to always include a leading and trailing slash.
-      this.root = ('/' + this.root + '/').replace(rootStripper, '/');
+      // Normalize root to include leading slash.
+      var root = ('/' + this.options.root).replace(rootStripper, '/');
+      this._root = root;
+      // Support legacy root, with normalized leading and trailing slash.
+      this.root = (root + '/').replace(rootStripper, '/');
+
+      this.fragment = this.getFragment();
 
       // Transition from hashChange to pushState or vice versa if both are
       // requested.
@@ -1631,14 +1645,14 @@
         // If we've started off with a route from a `pushState`-enabled
         // browser, but we're currently in a browser that doesn't support it...
         if (!this._hasPushState && !this.atRoot()) {
-          var root = this.root.slice(0, -1) || '/';
-          this.location.replace(root + '#' + this.getPath());
+          var fragment = this.getPath() + this.getSearch();
+          this.location.replace(this._root + '#' + fragment.replace(routeStripper, ''));
           // Return immediately as browser will do redirect to new url
           return true;
 
         // Or if we've started out with a hash-based route, but we're currently
         // in a browser where it could be `pushState`-based instead...
-        } else if (this._hasPushState && this.atRoot()) {
+        } else if (this._hasPushState && this.atRoot() && this.getHash()) {
           this.navigate(this.getHash(), {replace: true});
         }
 
@@ -1659,11 +1673,6 @@
         this.iframe.location.hash = '#' + this.fragment;
       }
 
-      // Add a cross-platform `addEventListener` shim for older browsers.
-      var addEventListener = window.addEventListener || function (eventName, listener) {
-        return attachEvent('on' + eventName, listener);
-      };
-
       // Depending on whether we're using pushState or hashes, and whether
       // 'onhashchange' is supported, determine how we check the URL state.
       if (this._usePushState) {
@@ -1680,11 +1689,6 @@
     // Disable Backbone.history, perhaps temporarily. Not useful in a real app,
     // but possibly useful for unit testing Routers.
     stop: function() {
-      // Add a cross-platform `removeEventListener` shim for older browsers.
-      var removeEventListener = window.removeEventListener || function (eventName, listener) {
-        return detachEvent('on' + eventName, listener);
-      };
-
       // Remove window listeners.
       if (this._usePushState) {
         removeEventListener('popstate', this.checkUrl, false);
@@ -1731,7 +1735,8 @@
     loadUrl: function(fragment) {
       // If the root doesn't match, no routes can match either.
       if (!this.matchRoot()) return false;
-      fragment = this.fragment = this.getFragment(fragment);
+      if (fragment == null) fragment = this.getFragment();
+      this.fragment = fragment.replace(routeStripper, '');
       return _.any(this.handlers, function(handler) {
         if (handler.route.test(fragment)) {
           handler.callback(fragment);
@@ -1752,18 +1757,15 @@
       if (!options || options === true) options = {trigger: !!options};
 
       // Normalize the fragment.
-      fragment = this.getFragment(fragment || '');
+      fragment = this.decodeFragment(fragment || '');
+      fragment = fragment.replace(routeStripper, '').replace(repeatedSlashStripper, '/');
 
-      // Don't include a trailing slash on the root.
-      var root = this.root;
-      if (fragment === '' || fragment.charAt(0) === '?') {
-        root = root.slice(0, -1) || '/';
-      }
-      var url = root + fragment;
+      // Don't force a trailing slash if it's not needed.
+      var forceSlash = /[^\/]$/.test(this._root) && /^[^/?#]/.test(fragment);
+      url = (forceSlash && fragment ? this.root : this._root) + fragment;
+      url = url.replace(repeatedSlashStripper, '/');
 
-      // Strip the hash and decode for matching.
-      fragment = this.decodeFragment(fragment.replace(pathStripper, ''));
-
+      fragment = fragment.replace(pathStripper, '');
       if (this.fragment === fragment) return;
       this.fragment = fragment;
 
