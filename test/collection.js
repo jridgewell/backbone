@@ -1087,13 +1087,12 @@
   });
 
   test("`set` and model level `parse`", function() {
-    var Model = Backbone.Model.extend({
-      parse: function(model) {
-        return model.model;
-      }
-    });
     var Collection = Backbone.Collection.extend({
-      model: Model
+      model: Backbone.Model.extend({
+        parse: function(model) {
+          return model.model;
+        }
+      })
     });
     var model = new Model({id: 1});
     var collection = new Collection(model);
