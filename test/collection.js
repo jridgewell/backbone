@@ -309,7 +309,7 @@
     equal(result[0], b, 'only returns removed models');
   });
 
-  test("add and remove return values", 13, function() {
+  test("add and remove return values", 12, function() {
     var Even = Backbone.Model.extend({
       validate: function(attrs) {
         if (attrs.id % 2 !== 0) return "odd";
@@ -326,11 +326,10 @@
 
     list = col.add([{id: 3}, {id: 6}], {validate: true});
     equal(col.length, 3);
-    equal(list[0], false);
-    equal(list[1].get('id'), 6);
+    equal(list[0].get('id'), 6);
 
     var result = col.add({id: 6});
-    equal(result.cid, list[1].cid);
+    equal(result.cid, list[0].cid);
 
     result = col.remove({id: 6});
     equal(col.length, 2);
@@ -1087,12 +1086,13 @@
   });
 
   test("`set` and model level `parse`", function() {
+    var Model = Backbone.Model.extend({
+      parse: function(model) {
+        return model.model;
+      }
+    });
     var Collection = Backbone.Collection.extend({
-      model: Backbone.Model.extend({
-        parse: function(model) {
-          return model.model;
-        }
-      })
+      model: Model
     });
     var model = new Model({id: 1});
     var collection = new Collection(model);
@@ -1633,5 +1633,39 @@
     equal(collectionParse, 1);
     equal(c.get(1).get('attr'), 'test');
   });
+
+  // var sortedIndex = function(models, model, comparator, low, high) {
+    // var value = comparator(model);
+    // while (low < high) {
+      // var mid = Math.floor((low + high) / 2);
+      // if (comparator(models[mid]) < value) low = mid + 1; else high = mid;
+    // }
+    // return low;
+  // };
+
+  // var length = 100;
+  // var comparator = _.property('x');
+  // for (var i = 0; i < length; i++) {
+    // for (var j = 0; j < length; j++) {
+      // var array = _.times(length, function(i) { return {x: i}; });
+      // var model = array[i];
+      // model.x = j;
+      // var index = i;
+      // var sIndex = sortedIndex(array, model, comparator, 0, index);
+      // var sIndex2 = -1;
+      // if (sIndex === index) {
+        // sIndex2 = sortedIndex(array, model, comparator, index, array.length);
+      // }
+      // if (sIndex2 > index) --sIndex2;
+      // array.splice(index, 1);
+      // array.splice(sIndex2 === -1 ? sIndex : sIndex2, 0, model);
+      // for (var k = 1; k < length; k++) {
+        // if (array[k - 1].x > array[k].x) {
+          // console.log(`current: ${index}, x: ${j}, first: ${sIndex}, second: ${sIndex2}`);
+          // console.log(_.map(array, comparator));
+        // }
+      // }
+    // }
+  // }
 
 })();

@@ -789,100 +789,108 @@
     // already exist in the collection, as necessary. Similar to **Model#set**,
     // the core operation for updating the data contained by the collection.
     set: function(models, options) {
+      if (!models) return;
+
       options = _.defaults({}, options, setOptions);
+
       var singular = !_.isArray(models);
-      models = singular ? (models ? [models] : []) : models.slice();
-      var id, model, attrs, existing, sort;
+      models = singular ? [models] : models;
+
       var at = options.at;
       if (at != null) at = +at;
       if (at < 0) at += this.length + 1;
-      var sortable = this.comparator && (at == null) && options.sort !== false;
-      var sortAttr = _.isString(this.comparator) ? this.comparator : null;
-      var toAdd = [], toRemove = [], modelMap = {};
-      var add = options.add, merge = options.merge, remove = options.remove;
-      var order = !sortable && add && remove ? [] : false;
-      var orderChanged = false;
+      var sort = at == null && this.comparator && options.sort !== false;
 
-      // Turn bare objects into model references, and prevent invalid models
-      // from being added.
+      options.at = at;
+      options.sort = sort;
+
+      var toAdd = [];
+      var toRemove = [];
+      var toMerge = [];
+      var mergeAttrs = [];
+      var modelMap = {};
+
+      var add = options.add;
+      var merge = options.merge;
+      var remove = options.remove;
+      var ordered = !sort && add && remove;
+
+      var returning = [];
+      var model, attrs;
       for (var i = 0; i < models.length; i++) {
-        attrs = models[i];
+        model = models[i];
 
-        // If a duplicate is found, prevent it from being added and
-        // optionally merge it into the existing model.
-        if (existing = this.get(attrs)) {
-          if (remove) modelMap[existing.cid] = true;
-          if (merge && attrs !== existing) {
-            attrs = this._isModel(attrs) ? attrs.attributes : attrs;
-            if (options.parse) attrs = existing.parse(attrs, options);
-            existing.set(attrs, options);
-            if (sortable && !sort && existing.hasChanged(sortAttr)) sort = true;
+        var existing = this.get(model);
+        if (!existing) {
+          model = this._prepareModel(model, options);
+          if (model) existing = this.get(model);
+        }
+        if (existing) {
+          if (merge && model !== existing) {
+            attrs = model;
+            if (this._isModel(model)) {
+              attrs = model.attributes;
+            } else if (options.parse) {
+              attrs = existing.parse(model, options);
+            }
+            toMerge.push(existing);
+            mergeAttrs.push(attrs);
           }
-          models[i] = existing;
-
-        // If this is a new, valid model, push it to the `toAdd` list.
-        } else if (add) {
-          model = models[i] = this._prepareModel(attrs, options);
-          if (!model) continue;
+          if (!modelMap[existing.cid]) {
+            modelMap[existing.cid] = true;
+            returning.push(existing);
+          }
+        } else if (model && add) {
           toAdd.push(model);
+          modelMap[model.cid] = true;
+          returning.push(model);
           this._addReference(model, options);
         }
-
-        // Do not add multiple models with the same `id`.
-        model = existing || model;
-        if (!model) continue;
-        id = this.modelId(model.attributes);
-        if (order && (model.isNew() || !modelMap[id])) {
-          order.push(model);
-
-          // Check to see if this is actually a new model at this index.
-          orderChanged = orderChanged || !this.models[i] || model.cid !== this.models[i].cid;
-        }
-
-        modelMap[id] = true;
       }
 
       // Remove nonexistent models if appropriate.
       if (remove) {
-        for (var i = 0; i < this.length; i++) {
-          if (!modelMap[(model = this.models[i]).cid]) toRemove.push(model);
+        for (i = 0; i < this.length; i++) {
+          model = this.models[i];
+          if (!modelMap[model.cid]) toRemove.push(model);
         }
         if (toRemove.length) this._removeModels(toRemove, options);
       }
 
+      var orderChanged;
+      if (toMerge.length) this._mergeModels(toMerge, mergeAttrs, options);
+
       // See if sorting is needed, update `length` and splice in new models.
-      if (toAdd.length || orderChanged) {
-        if (sortable) sort = true;
-        this.length += toAdd.length;
-        if (at != null) {
-          for (var i = 0; i < toAdd.length; i++) {
-            this.models.splice(at + i, 0, toAdd[i]);
-          }
-        } else {
-          if (order) this.models.length = 0;
-          var orderedModels = order || toAdd;
-          for (var i = 0; i < orderedModels.length; i++) {
-            this.models.push(orderedModels[i]);
-          }
+      if (ordered) {
+        orderChanged = _.any(this.models, function(model, index) {
+          return returning[index] !== model;
+        });
+        this.models = returning;
+        this.length = returning.length;
+      } else {
+        if (toAdd.length) this._addModels(toAdd, options);
+        orderChanged = options.orderChanged;
+
+        if (sort && !binaryComparator && (toResort.length || toAdd.length)) {
+          this.sort({silent: true});
         }
       }
 
-      // Silently sort the collection if appropriate.
-      if (sort) this.sort({silent: true});
-
       // Unless silenced, it's time to fire all appropriate add/sort events.
       if (!options.silent) {
-        var addOpts = at != null ? _.clone(options) : options;
-        for (var i = 0; i < toAdd.length; i++) {
-          if (at != null) addOpts.index = at + i;
-          (model = toAdd[i]).trigger('add', model, this, addOpts);
+        var index = options.index;
+        for (i = 0; i < toAdd.length; i++) {
+          if (at != null) options.index = at + i;
+          model = toAdd[i];
+          model.trigger('add', model, this, options);
         }
-        if (sort || orderChanged) this.trigger('sort', this, options);
+        options.index = index;
+        if (orderChanged) this.trigger('sort', this, options);
         if (toAdd.length || toRemove.length) this.trigger('update', this, options);
       }
 
       // Return the added (or merged) model (or models).
-      return singular ? models[0] : models;
+      return singular ? returning[0] : returning;
     },
 
     // When you have more items than you want to add or remove individually,
@@ -890,7 +898,7 @@
     // any granular `add` or `remove` events. Fires `reset` when finished.
     // Useful for bulk operations and optimizations.
     reset: function(models, options) {
-      options = options ? _.clone(options) : {};
+      options = _.extend({}, options);
       for (var i = 0; i < this.models.length; i++) {
         this._removeReference(this.models[i], options);
       }
@@ -1001,16 +1009,20 @@
     // collection immediately, unless `wait: true` is passed, in which case we
     // wait for the server to agree.
     create: function(model, options) {
-      options = options ? _.clone(options) : {};
+      options = _.extend({}, options);
+      model = this._prepareModel(model, options);
+      if (!model) return false;
+
       var wait = options.wait;
-      if (!(model = this._prepareModel(model, options))) return false;
       if (!wait) this.add(model, options);
+
       var collection = this;
       var success = options.success;
       options.success = function(model, resp, callbackOpts) {
         if (wait) collection.add(model, callbackOpts);
         if (success) success.call(callbackOpts.context, model, resp, callbackOpts);
       };
+
       model.save(null, options);
       return model;
     },
@@ -1049,12 +1061,89 @@
         if (!attrs.collection) attrs.collection = this;
         return attrs;
       }
-      options = options ? _.clone(options) : {};
-      options.collection = this;
+      options = _.defaults({collection: this}, options);
       var model = new this.model(attrs, options);
       if (!model.validationError) return model;
       this.trigger('invalid', this, model.validationError, options);
       return false;
+    },
+
+    // Internal method called by set.
+    _addModels: function(models, options) {
+      var at = options.at;
+      var orderChanged = options.orderChanged;
+      var current = this.models;
+      var binaryComparator = this._binaryComparator(options);
+
+      for (var i = 0; i < models.length; i++) {
+        var model = models[i];
+        if (binaryComparator) {
+          var index = _.sortedIndex(current, model, binaryComparator);
+          if (index < current.length) options.orderChanged = true;
+          current.splice(index, 0, model);
+        } else if (at == null) {
+          current.push(model);
+        } else {
+          current.splice(at + i, 0, model);
+        }
+      }
+
+      if (i && at != null && at < this.length) options.orderChanged = true;
+      this.length = current.length;
+    },
+
+    _binaryComparator: function(options) {
+      if (options && !options.sort) return false;
+      var comparator = this.comparator;
+      if (_.isFunction(comparator)) {
+        return comparator.length === 1 ? _.bind(comparator, this) : false;
+      } else if (_.isString(comparator)) {
+        return function(model) {
+          return model.get(comparator);
+        };
+      }
+      return false;
+    },
+
+    _mergeModels: function(models, mergeAttrs, options) {
+      var sort = options.sort;
+      var orderChanged = sort && !this._binaryComparator(options);
+
+      for (var i = 0; i < models.length; i++) {
+        var model = models[i];
+        var attrs = mergeAttrs[i];
+
+        model.set(attrs);
+        if (!sort || orderChanged) continue;
+        orderChanged = this._orderChanged();
+      }
+
+      if (orderChanged) options.orderChanged = true;
+    },
+
+    _orderChanged: function(model) {
+      var comparator = this._binaryComparator();
+      if (!comparator) return false;
+      var index = this.indexOf(model);
+      var sortedIndex = this._sortedIndex(index, comparator, 0, index);
+      if (sortedIndex === index) {
+        sortedIndex = this._sortedIndex(index, comparator, index, this.length);
+      }
+      if (sortedIndex > index) sortedIndex--;
+      // return sortedIndex;
+      var other = this.at(sortedIndex);
+      return comparator(model) !== comparator(other);
+    },
+
+    _sortedIndex: function(index, comparator, low, high) {
+      var models = this.models;
+      var model = model[index];
+      var value = comparator(model);
+      while (low < high) {
+        var mid = Math.floor((low + high) / 2);
+        if (comparator(models[mid]) < value) low = mid + 1; else high = mid;
+      }
+      return low;
     },
 
     // Internal method called by both remove and set.
@@ -1092,6 +1181,7 @@
       this._byId[model.cid] = model;
       var id = this.modelId(model.attributes);
       if (id != null) this._byId[id] = model;
+      if (!model.collection) model.collection = this;
       model.on('all', this._onModelEvent, this);
     },
 
