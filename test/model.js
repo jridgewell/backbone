@@ -503,20 +503,23 @@
     ok(_.isEqual(this.syncArgs.model, doc));
   });
 
-  test("save, fetch, destroy triggers error event when an error occurs", 3, function () {
+  asyncTest("save, fetch, destroy triggers error event when an error occurs", 3, function () {
+    stop(2);
     var model = new Backbone.Model();
     model.on('error', function () {
       ok(true);
+      start();
     });
     model.sync = function (method, model, options) {
-      options.error();
+      return Backbone.Promise.reject();
     };
     model.save({data: 2, id: 1});
     model.fetch();
     model.destroy();
   });
 
-  test("#3283 - save, fetch, destroy calls success with context", 3, function () {
+  asyncTest("#3283 - save, fetch, destroy calls success with context", 3, function () {
+    stop(2);
     var model = new Backbone.Model();
     var obj = {};
     var options = {
@@ -526,7 +529,7 @@
       }
     };
     model.sync = function (method, model, options) {
-      options.success.call(options.context);
+      return Backbone.Promise.resolve();
     };
     model.save({data: 2, id: 1}, options);
     model.fetch(options);

@@ -574,7 +574,7 @@
       delete options.success;
       return this.sync('read', this, options).then(function(resp) {
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
-        if (!model.set(serverAttrs, options)) throw model.validationError;
+        if (!model.set(serverAttrs, options)) return Backbone.Promise.reject(model.validationError);
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
         return resp;
@@ -622,7 +622,7 @@
         model.attributes = attributes;
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
         if (wait) serverAttrs = _.extend({}, attrs, serverAttrs);
-        if (serverAttrs && !model.set(serverAttrs, options)) throw model.validationError;
+        if (serverAttrs && !model.set(serverAttrs, options)) return Backbone.Promise.reject(model.validationError);
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
         return resp;
@@ -1882,7 +1882,7 @@
     return function(resp) {
       if (error) error.call(options.context, model, resp, options);
       model.trigger('error', model, resp, options);
-      throw resp;
+      return Backbone.Promise.reject(resp);
     };
   };
 
