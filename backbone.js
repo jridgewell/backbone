@@ -571,14 +571,14 @@
       options = _.extend({parse: true}, options);
       var model = this;
       var success = options.success;
-      options.success = function(resp) {
+      delete options.success;
+      return this.sync('read', this, options).then(function(resp) {
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
-        if (!model.set(serverAttrs, options)) return false;
+        if (!model.set(serverAttrs, options)) throw model.validationError;
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
-      };
-      wrapError(this, options);
-      return this.sync('read', this, options);
+        return resp;
+      }, wrapError(this, options));
     },
 
     // Set a hash of model attributes, and sync the model to the server.
@@ -609,25 +609,24 @@
       // After a successful server-side save, the client is (optionally)
       // updated with the server-side state.
       var model = this;
-      var success = options.success;
       var attributes = this.attributes;
-      options.success = function(resp) {
-        // Ensure attributes are restored during synchronous saves.
-        model.attributes = attributes;
-        var serverAttrs = options.parse ? model.parse(resp, options) : resp;
-        if (wait) serverAttrs = _.extend({}, attrs, serverAttrs);
-        if (serverAttrs && !model.set(serverAttrs, options)) return false;
-        if (success) success.call(options.context, model, resp, options);
-        model.trigger('sync', model, resp, options);
-      };
-      wrapError(this, options);
-
+      var success = options.success;
+      delete options.success;
       // Set temporary attributes if `{wait: true}` to properly find new ids.
       if (attrs && wait) this.attributes = _.extend({}, attributes, attrs);
 
       var method = this.isNew() ? 'create' : (options.patch ? 'patch' : 'update');
       if (method === 'patch' && !options.attrs) options.attrs = attrs;
-      var xhr = this.sync(method, this, options);
+      var xhr = this.sync(method, this, options).then(function(resp) {
+        // Ensure attributes are restored during synchronous saves.
+        model.attributes = attributes;
+        var serverAttrs = options.parse ? model.parse(resp, options) : resp;
+        if (wait) serverAttrs = _.extend({}, attrs, serverAttrs);
+        if (serverAttrs && !model.set(serverAttrs, options)) throw model.validationError;
+        if (success) success.call(options.context, model, resp, options);
+        model.trigger('sync', model, resp, options);
+        return resp;
+      }, wrapError(this, options));
 
       // Restore attributes.
       this.attributes = attributes;
@@ -641,29 +640,28 @@
     destroy: function(options) {
       options = _.extend({}, options);
       var model = this;
-      var success = options.success;
       var wait = options.wait;
+      var success = options.success;
+      delete options.success;
 
       var destroy = function() {
         model.stopListening();
         model.trigger('destroy', model, model.collection, options);
       };
 
-      options.success = function(resp) {
-        if (wait) destroy();
-        if (success) success.call(options.context, model, resp, options);
-        if (!model.isNew()) model.trigger('sync', model, resp, options);
-      };
-
       var xhr;
       if (this.isNew()) {
-        xhr = Backbone.Promise.resolve().then(options.success);
+        xhr = Backbone.Promise.resolve();
       } else {
-        wrapError(this, options);
         xhr = this.sync('delete', this, options);
       }
       if (!wait) destroy();
-      return xhr;
+      return xhr.then(function(resp) {
+        if (wait) destroy();
+        if (success) success.call(options.context, model, resp, options);
+        if (!model.isNew()) model.trigger('sync', model, resp, options);
+        return resp;
+      }, wrapError(this, options));
     },
 
     // Default URL for the model's representation on the server -- if you're
@@ -823,7 +821,7 @@
         // If this is a new, valid model, push it to the `toAdd` list.
         } else if (add) {
           model = models[i] = this._prepareModel(attrs, options);
-          if (!model) continue;
+          if (model.validationError) continue;
           toAdd.push(model);
           this._addReference(model, options);
         }
@@ -983,36 +981,36 @@
     // collection when they arrive. If `reset: true` is passed, the response
     // data will be passed through the `reset` method instead of `set`.
     fetch: function(options) {
-      options = options ? _.clone(options) : {};
-      if (options.parse === void 0) options.parse = true;
-      var success = options.success;
+      options = _.extend({parse: true}, options);
       var collection = this;
-      options.success = function(resp) {
+      var success = options.success;
+      delete options.success;
+      return this.sync('read', this, options).then(function(resp) {
         var method = options.reset ? 'reset' : 'set';
         collection[method](resp, options);
         if (success) success.call(options.context, collection, resp, options);
         collection.trigger('sync', collection, resp, options);
-      };
-      wrapError(this, options);
-      return this.sync('read', this, options);
+        return resp;
+      }, wrapError(this, options));
     },
 
     // Create a new instance of a model in this collection. Add the model to the
     // collection immediately, unless `wait: true` is passed, in which case we
     // wait for the server to agree.
     create: function(model, options) {
-      options = options ? _.clone(options) : {};
+      options = _.extend({}, options);
       var wait = options.wait;
-      if (!(model = this._prepareModel(model, options))) return false;
+      model = this._prepareModel(model, options);
+      if (model.validationError) return Backbone.Promise.reject(model.validationError);
       if (!wait) this.add(model, options);
       var collection = this;
       var success = options.success;
-      options.success = function(model, resp, callbackOpts) {
-        if (wait) collection.add(model, callbackOpts);
-        if (success) success.call(callbackOpts.context, model, resp, callbackOpts);
-      };
-      model.save(null, options);
-      return model;
+      delete options.success;
+      return model.save(null, options).then(function(resp) {
+        if (wait) collection.add(model, options);
+        if (success) success.call(options.context, model, resp, options);
+        return model;
+      });
     },
 
     // **parse** converts a response into a list of models to be added to the
@@ -1052,9 +1050,8 @@
       options = options ? _.clone(options) : {};
       options.collection = this;
       var model = new this.model(attrs, options);
-      if (!model.validationError) return model;
-      this.trigger('invalid', this, model.validationError, options);
-      return false;
+      if (model.validationError) this.trigger('invalid', this, model.validationError, options);
+      return model;
     },
 
     // Internal method called by both remove and set.
@@ -1410,7 +1407,7 @@
 
   // A psuedo Promise implementation used to ensure asynchronous methods
   // return thenables.
-  // Override this if you'd like to use a different ES6 library.
+  // Override this if you'd like to use a real ES6 library.
   Backbone.Promise = function() {
     throw new Error('Backbone does not provide a spec compliant Promise by default.');
   };
@@ -1881,9 +1878,11 @@
   // Wrap an optional error callback with a fallback error event.
   var wrapError = function(model, options) {
     var error = options.error;
-    options.error = function(resp) {
+    delete options.error;
+    return function(resp) {
       if (error) error.call(options.context, model, resp, options);
       model.trigger('error', model, resp, options);
+      throw resp;
     };
   };
 
