@@ -17,6 +17,8 @@
     // Capture ajax settings for comparison.
     Backbone.ajax = function(settings) {
       env.ajaxSettings = settings;
+      env.deferred = $.Deferred();
+      return env.deferred.promise();
     };
 
     // Capture the arguments to Backbone.sync for comparison.
@@ -26,7 +28,7 @@
         model: model,
         options: options
       };
-      sync.apply(this, arguments);
+      return sync.apply(this, arguments);
     };
 
   });

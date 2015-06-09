@@ -5,6 +5,18 @@
     url : function() { return '/collection'; }
   });
   var doc, collection;
+  var successSync = function(override) {
+    var hasOverride = arguments.length;
+    return function(resp) {
+      return Backbone.Promise.resolve(hasOverride ? override : resp)
+    }
+  }
+  var errorSync = function(override) {
+    var hasOverride = arguments.length;
+    return function(resp) {
+      return Backbone.Promise.reject(hasOverride ? override : resp)
+    }
+  }
 
   module("Backbone.Model", {
 
@@ -480,21 +492,18 @@
     model.set({lastName: 'Hicks'});
   });
 
-  test("validate after save", 2, function() {
+  asyncTest("validate after save", 2, function() {
     var lastError, model = new Backbone.Model();
     model.validate = function(attrs) {
       if (attrs.admin) return "Can't change admin status.";
     };
-    model.sync = function(method, model, options) {
-      options.success.call(this, {admin: true});
-    };
+    model.sync = successSync({ admin: true });
     model.on('invalid', function(model, error) {
-      lastError = error;
+      equal(error, "Can't change admin status.");
+      equal(model.validationError, "Can't change admin status.");
+      start();
     });
-    model.save(null);
-
-    equal(lastError, "Can't change admin status.");
-    equal(model.validationError, "Can't change admin status.");
+    model.save();
   });
 
   test("save", 2, function() {
@@ -510,9 +519,7 @@
       ok(true);
       start();
     });
-    model.sync = function (method, model, options) {
-      return Backbone.Promise.reject();
-    };
+    model.sync = errorSync();
     model.save({data: 2, id: 1});
     model.fetch();
     model.destroy();
@@ -526,46 +533,44 @@
       context: obj,
       success: function() {
         equal(this, obj);
+        start();
       }
     };
-    model.sync = function (method, model, options) {
-      return Backbone.Promise.resolve();
-    };
+    model.sync = successSync();
     model.save({data: 2, id: 1}, options);
     model.fetch(options);
     model.destroy(options);
   });
 
-  test("#3283 - save, fetch, destroy calls error with context", 3, function () {
+  asyncTest("#3283 - save, fetch, destroy calls error with context", 3, function () {
+    stop(2);
     var model = new Backbone.Model();
     var obj = {};
     var options = {
       context: obj,
       error: function() {
         equal(this, obj);
+        start();
       }
     };
-    model.sync = function (method, model, options) {
-      options.error.call(options.context);
-    };
+    model.sync = errorSync();
     model.save({data: 2, id: 1}, options);
     model.fetch(options);
     model.destroy(options);
   });
 
-  test("#3470 - save and fetch with parse false", 2, function() {
-    var i = 0;
+  asyncTest("#3470 - save and fetch with parse false", 0, function() {
+    stop();
     var model = new Backbone.Model();
+    var checkAttr = function() {
+      start();
+    };
     model.parse = function() {
       ok(false);
     };
-    model.sync = function(method, model, options) {
-      options.success({i: ++i});
-    };
-    model.fetch({parse: false});
-    equal(model.get('i'), i);
-    model.save(null, {parse: false});
-    equal(model.get('i'), i);
+    model.sync = successSync();
+    model.fetch({parse: false}).then(checkAttr);
+    model.save(null, {parse: false}).then(checkAttr);
   });
 
   test("save with PATCH", function() {
@@ -592,24 +597,22 @@
 
   test("save in positional style", 1, function() {
     var model = new Backbone.Model();
-    model.sync = function(method, model, options) {
-      options.success();
-    };
+    model.sync = successSync();
     model.save('title', 'Twelfth Night');
     equal(model.get('title'), 'Twelfth Night');
   });
 
-  test("save with non-object success response", 2, function () {
+  asyncTest("save with non-object success response", 2, function () {
     var model = new Backbone.Model();
-    model.sync = function(method, model, options) {
-      options.success('', options);
-      options.success(null, options);
-    };
-    model.save({testing:'empty'}, {
-      success: function (model) {
-        deepEqual(model.attributes, {testing:'empty'});
-      }
-    });
+    model.sync = successSync('');
+    model.save({testing: 'empty'}).then(function() {
+      deepEqual(model.attributes, {testing: 'empty'});
+      model.sync = successSync(null);
+      return model.save({testing: 'other'});
+    }).then(function() {
+      deepEqual(model.attributes, {testing: 'other'});
+      start();
+    })
   });
 
   test("save with wait and supplied id", function() {
@@ -621,7 +624,7 @@
     equal(this.ajaxSettings.url, '/collection/42');
   });
 
-  test("save will pass extra options to success callback", 1, function () {
+  asyncTest("save will pass extra options to success callback", 1, function () {
     var SpecialSyncModel = Backbone.Model.extend({
       sync: function (method, model, options) {
         _.extend(options, { specialSync: true });
@@ -634,10 +637,11 @@
 
     var onSuccess = function (model, response, options) {
       ok(options.specialSync, "Options were passed correctly to callback");
+      start();
     };
 
     model.save(null, { success: onSuccess });
-    this.ajaxSettings.success();
+    this.deferred.resolve();
   });
 
   test("fetch", 2, function() {
@@ -646,7 +650,7 @@
     ok(_.isEqual(this.syncArgs.model, doc));
   });
 
-  test("fetch will pass extra options to success callback", 1, function () {
+  asyncTest("fetch will pass extra options to success callback", 1, function () {
     var SpecialSyncModel = Backbone.Model.extend({
       sync: function (method, model, options) {
         _.extend(options, { specialSync: true });
@@ -659,10 +663,11 @@
 
     var onSuccess = function (model, response, options) {
       ok(options.specialSync, "Options were passed correctly to callback");
+      start();
     };
 
     model.fetch({ success: onSuccess });
-    this.ajaxSettings.success();
+    this.deferred.resolve();
   });
 
   asyncTest("destroy", 3, function() {
@@ -680,7 +685,7 @@
     async = true;
   });
 
-  test("destroy will pass extra options to success callback", 1, function () {
+  asyncTest("destroy will pass extra options to success callback", 1, function () {
     var SpecialSyncModel = Backbone.Model.extend({
       sync: function (method, model, options) {
         _.extend(options, { specialSync: true });
@@ -693,10 +698,11 @@
 
     var onSuccess = function (model, response, options) {
       ok(options.specialSync, "Options were passed correctly to callback");
+      start();
     };
 
     model.destroy({ success: onSuccess });
-    this.ajaxSettings.success();
+    this.deferred.resolve();
   });
 
   test("non-persisted destroy", 1, function() {
@@ -922,7 +928,7 @@
   test("save doesn't validate twice", function () {
     var model = new Backbone.Model();
     var times = 0;
-    model.sync = function () {};
+    model.sync = successSync();
     model.validate = function () { ++times; }
     model.save({});
     equal(times, 1);
@@ -942,18 +948,20 @@
     equal(model.previous(''), true);
   });
 
-  test("`save` with `wait` sends correct attributes", 5, function() {
+  asyncTest("`save` with `wait` sends correct attributes", 5, function() {
     var changed = 0;
     var model = new Backbone.Model({x: 1, y: 2});
     model.url = '/test';
     model.on('change:x', function() { changed++; });
-    model.save({x: 3}, {wait: true});
+    model.save({x: 3}, {wait: true}).then(function() {
+      equal(model.get('x'), 3);
+      equal(changed, 1);
+      start();
+    });
     deepEqual(JSON.parse(this.ajaxSettings.data), {x: 3, y: 2});
     equal(model.get('x'), 1);
     equal(changed, 0);
-    this.syncArgs.options.success({});
-    equal(model.get('x'), 3);
-    equal(changed, 1);
+    this.deferred.resolve({});
   });
 
   test("a failed `save` with `wait` doesn't leave attributes behind", 1, function() {
@@ -964,13 +972,19 @@
   });
 
   test("#1030 - `save` with `wait` results in correct attributes if success is called during sync", 2, function() {
+    // TODO. Shaky about this one. Should we support synchronously
+    // resolving then callbacks?
     var model = new Backbone.Model({x: 1, y: 2});
-    model.sync = function(method, model, options) {
-      options.success();
+    model.sync = function() {
+      return {
+        then: function(resolve, reject) {
+          resolve();
+          equal(model.get('x'), 3);
+        }
+      };
     };
     model.on("change:x", function() { ok(true); });
     model.save({x: 3}, {wait: true});
-    equal(model.get('x'), 3);
   });
 
   test("save with wait validates attributes", function() {
@@ -980,9 +994,13 @@
     model.save({x: 1}, {wait: true});
   });
 
-  test("save turns on parse flag", function () {
+  asyncTest("save parses", function () {
     var Model = Backbone.Model.extend({
-      sync: function(method, model, options) { ok(options.parse); }
+      parse: function() {
+        ok(true);
+        start();
+      },
+      sync: successSync()
     });
     new Model().save();
   });
@@ -1131,25 +1149,29 @@
     ok(!options.unset);
   });
 
-  test("#1355 - `options` is passed to success callbacks", 3, function() {
+  asyncTest("#1355 - `options` is passed to success callbacks", 3, function() {
+    stop(2);
     var model = new Backbone.Model();
     var opts = {
       success: function( model, resp, options ) {
         ok(options);
+        start();
       }
     };
-    model.sync = function(method, model, options) {
-      options.success();
-    };
+    model.sync = successSync();
     model.save({id: 1}, opts);
     model.fetch(opts);
     model.destroy(opts);
   });
 
-  test("#1412 - Trigger 'sync' event.", 3, function() {
+  asyncTest("#1412 - Trigger 'sync' event.", 3, function() {
+    stop(2);
     var model = new Backbone.Model({id: 1});
-    model.sync = function (method, model, options) { options.success(); };
-    model.on('sync', function(){ ok(true); });
+    model.sync = successSync();
+    model.on('sync', function(){
+      ok(true);
+      start();
+    });
     model.fetch();
     model.save();
     model.destroy();
@@ -1203,16 +1225,11 @@
 
   asyncTest("#1478 - Model `save` does not trigger change on unchanged attributes", 0, function() {
     var Model = Backbone.Model.extend({
-      sync: function(method, model, options) {
-        setTimeout(function(){
-          options.success();
-          start();
-        }, 0);
-      }
+      sync: successSync()
     });
     new Model({x: true})
     .on('change:x', function(){ ok(false); })
-    .save(null, {wait: true});
+    .save(null, {wait: true}).then(start);
   });
 
   test("#1664 - Changing from one value, silently to another, back to original triggers a change.", 1, function() {
