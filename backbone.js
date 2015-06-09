@@ -570,15 +570,15 @@
     fetch: function(options) {
       options = _.extend({parse: true}, options);
       var model = this;
-      var success = options.success;
-      delete options.success;
+      var success = options.success, error = options.error;
+      options.success = options.error = void 0;
       return this.sync('read', this, options).then(function(resp) {
         var serverAttrs = options.parse ? model.parse(resp, options) : resp;
         if (!model.set(serverAttrs, options)) return Backbone.Promise.reject(model.validationError);
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
         return resp;
-      }, wrapError(this, options));
+      }, wrapError(this, error, options));
     },
 
     // Set a hash of model attributes, and sync the model to the server.
@@ -610,8 +610,8 @@
       // updated with the server-side state.
       var model = this;
       var attributes = this.attributes;
-      var success = options.success;
-      delete options.success;
+      var success = options.success, error = options.error;
+      options.success = options.error = void 0;
       // Set temporary attributes if `{wait: true}` to properly find new ids.
       if (attrs && wait) this.attributes = _.extend({}, attributes, attrs);
 
@@ -626,7 +626,7 @@
         if (success) success.call(options.context, model, resp, options);
         model.trigger('sync', model, resp, options);
         return resp;
-      }, wrapError(this, options));
+      }, wrapError(this, error, options));
 
       // Restore attributes.
       this.attributes = attributes;
@@ -641,8 +641,8 @@
       options = _.extend({}, options);
       var model = this;
       var wait = options.wait;
-      var success = options.success;
-      delete options.success;
+      var success = options.success, error = options.error;
+      options.success = options.error = void 0;
 
       var destroy = function() {
         model.stopListening();
@@ -661,7 +661,7 @@
         if (success) success.call(options.context, model, resp, options);
         if (!model.isNew()) model.trigger('sync', model, resp, options);
         return resp;
-      }, wrapError(this, options));
+      }, wrapError(this, error, options));
     },
 
     // Default URL for the model's representation on the server -- if you're
@@ -983,15 +983,15 @@
     fetch: function(options) {
       options = _.extend({parse: true}, options);
       var collection = this;
-      var success = options.success;
-      delete options.success;
+      var success = options.success, error = options.error;
+      options.success = options.error = void 0;
       return this.sync('read', this, options).then(function(resp) {
         var method = options.reset ? 'reset' : 'set';
         collection[method](resp, options);
         if (success) success.call(options.context, collection, resp, options);
         collection.trigger('sync', collection, resp, options);
         return resp;
-      }, wrapError(this, options));
+      }, wrapError(this, error, options));
     },
 
     // Create a new instance of a model in this collection. Add the model to the
@@ -1005,7 +1005,7 @@
       if (!wait) this.add(model, options);
       var collection = this;
       var success = options.success;
-      delete options.success;
+      options.success = void 0;
       return model.save(null, options).then(function(resp) {
         if (wait) collection.add(model, options);
         if (success) success.call(options.context, model, resp, options);
@@ -1877,9 +1877,7 @@
   };
 
   // Wrap an optional error callback with a fallback error event.
-  var wrapError = function(model, options) {
-    var error = options.error;
-    delete options.error;
+  var wrapError = function(model, error, options) {
     return function(resp) {
       if (error) error.call(options.context, model, resp, options);
       model.trigger('error', model, resp, options);
