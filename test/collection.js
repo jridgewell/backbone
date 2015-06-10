@@ -16,6 +16,17 @@
 
   });
 
+  var successSync = function(resp) {
+    return function() {
+      return Backbone.Promise.resolve(resp);
+    };
+  };
+  var errorSync = function(resp) {
+    return function() {
+      return Backbone.Promise.reject(resp);
+    };
+  };
+
   test("new and sort", 6, function() {
     var counter = 0;
     col.on('sort', function(){ counter++; });
@@ -439,15 +450,17 @@
     equal(counter, 2);
   });
 
-  test("model destroy removes from all collections", 3, function() {
+  asyncTest("model destroy removes from all collections", 3, function() {
     var e = new Backbone.Model({id: 5, title: 'Othello'});
-    e.sync = function(method, model, options) { options.success(); };
+    e.sync = successSync();
     var colE = new Backbone.Collection([e]);
     var colF = new Backbone.Collection([e]);
-    e.destroy();
-    ok(colE.length === 0);
-    ok(colF.length === 0);
-    equal(undefined, e.collection);
+    e.destroy().then(function() {
+      ok(colE.length === 0);
+      ok(colF.length === 0);
+      equal(undefined, e.collection);
+      start();
+    });
   });
 
   test("Colllection: non-persisted model destroy removes from all collections", 3, function() {
@@ -473,54 +486,59 @@
     equal(this.syncArgs.options.parse, false);
   });
 
-  test("fetch with an error response triggers an error event", 1, function () {
+  asyncTest("fetch with an error response triggers an error event", 1, function () {
     var collection = new Backbone.Collection();
     collection.on('error', function () {
       ok(true);
+      start();
     });
-    collection.sync = function (method, model, options) { options.error(); };
+    collection.sync = errorSync();
     collection.fetch();
   });
 
-  test("#3283 - fetch with an error response calls error with context", 1, function () {
+  asyncTest("#3283 - fetch with an error response calls error with context", 1, function () {
     var collection = new Backbone.Collection();
     var obj = {};
     var options = {
       context: obj,
       error: function() {
         equal(this, obj);
+        start();
       }
     };
-    collection.sync = function (method, model, options) {
-      options.error.call(options.context);
-    };
+    collection.sync = errorSync();
     collection.fetch(options);
   });
 
-  test("ensure fetch only parses once", 1, function() {
+  asyncTest("ensure fetch only parses once", 1, function() {
     var collection = new Backbone.Collection;
     var counter = 0;
     collection.parse = function(models) {
       counter++;
       return models;
     };
-    collection.url = '/test';
-    collection.fetch();
-    this.syncArgs.options.success();
-    equal(counter, 1);
+    collection.sync = successSync();
+    collection.fetch().then(function() {
+      equal(counter, 1);
+      start();
+    });
   });
 
-  test("create", 4, function() {
+  asyncTest("create", 4, function() {
     var collection = new Backbone.Collection;
+    var env = this;
     collection.url = '/test';
-    var model = collection.create({label: 'f'}, {wait: true});
+    collection.create({label: 'f'}, {wait: true}).then(function(model) {
+      equal(env.syncArgs.model, model);
+      equal(model.get('label'), 'f');
+      equal(model.collection, collection);
+      start();
+    });
     equal(this.syncArgs.method, 'create');
-    equal(this.syncArgs.model, model);
-    equal(model.get('label'), 'f');
-    equal(model.collection, collection);
+    this.deferred.resolve();
   });
 
-  test("create with validate:true enforces validation", 3, function() {
+  asyncTest("create with validate:true enforces validation", 4, function() {
     var ValidatingModel = Backbone.Model.extend({
       validate: function(attrs) {
         return "fail";
@@ -534,10 +552,14 @@
       equal(error, "fail");
       equal(options.validationError, 'fail');
     });
-    equal(col.create({"foo":"bar"}, {validate:true}), false);
+    col.create({"foo":"bar"}, {validate:true}).then(null, function(error) {
+      equal(error, "fail");
+      equal(col.length, 0);
+      start();
+    });
   });
 
-  test("create will pass extra options to success callback", 1, function () {
+  asyncTest("create will pass extra options to success callback", 1, function () {
     var Model = Backbone.Model.extend({
       sync: function (method, model, options) {
         _.extend(options, {specialSync: true});
@@ -554,14 +576,14 @@
 
     var success = function (model, response, options) {
       ok(options.specialSync, "Options were passed correctly to callback");
+      start();
     };
 
     collection.create({}, {success: success});
-    this.ajaxSettings.success();
-
+    this.deferred.resolve();
   });
 
-  test("a failing create returns model with errors", function() {
+  asyncTest("a failing create returns model with errors", 4, function() {
     var ValidatingModel = Backbone.Model.extend({
       validate: function(attrs) {
         return "fail";
@@ -571,9 +593,15 @@
       model: ValidatingModel
     });
     var col = new ValidatingCollection();
-    var m = col.create({"foo":"bar"});
-    equal(m.validationError, 'fail');
-    equal(col.length, 1);
+    col.on('invalid', function(collection, error, options) {
+      equal(error, "fail");
+      equal(options.validationError, 'fail');
+    });
+    col.create({"foo":"bar"}).then(null, function(error) {
+      equal(error, 'fail');
+      equal(col.length, 1);
+      start();
+    });
   });
 
   test("initialize", 1, function() {

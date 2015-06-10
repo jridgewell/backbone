@@ -5,18 +5,16 @@
     url : function() { return '/collection'; }
   });
   var doc, collection;
-  var successSync = function(override) {
-    var hasOverride = arguments.length;
-    return function(resp) {
-      return Backbone.Promise.resolve(hasOverride ? override : resp)
-    }
-  }
-  var errorSync = function(override) {
-    var hasOverride = arguments.length;
-    return function(resp) {
-      return Backbone.Promise.reject(hasOverride ? override : resp)
-    }
-  }
+  var successSync = function(resp) {
+    return function() {
+      return Backbone.Promise.resolve(resp);
+    };
+  };
+  var errorSync = function(resp) {
+    return function() {
+      return Backbone.Promise.reject(resp);
+    };
+  };
 
   module("Backbone.Model", {
 

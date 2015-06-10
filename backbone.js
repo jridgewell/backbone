@@ -821,7 +821,10 @@
         // If this is a new, valid model, push it to the `toAdd` list.
         } else if (add) {
           model = models[i] = this._prepareModel(attrs, options);
-          if (model.validationError) continue;
+          if (model.validationError) {
+            models[i] = false;
+            continue;
+          }
           toAdd.push(model);
           this._addReference(model, options);
         }
@@ -1001,11 +1004,13 @@
       options = _.extend({}, options);
       var wait = options.wait;
       model = this._prepareModel(model, options);
-      if (model.validationError) return Backbone.Promise.reject(model.validationError);
+      if (model.validationError) return Backbone.Promise.reject(model);
       if (!wait) this.add(model, options);
       var collection = this;
       var success = options.success;
-      options.success = void 0;
+      options.success = function(m, r, opts) {
+        options = opts;
+      };
       return model.save(null, options).then(function(resp) {
         if (wait) collection.add(model, options);
         if (success) success.call(options.context, model, resp, options);
