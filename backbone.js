@@ -138,10 +138,10 @@
         if (eventSplitter.test(name)) {
           // Handle space separated event names by delegating them individually.
           for (var split = name.split(eventSplitter), j = 0; j < split.length; j++) {
-            events = eventsApi(iteratee, events, split[j], callback, opts);
+            events = iteratee(events, split[j], callback, opts);
           }
         } else {
-          events = eventsApi(iteratee, events, name, callback, opts);
+          events = iteratee(events, name, callback, opts);
         }
       }
       return events;
