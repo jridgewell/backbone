@@ -122,22 +122,32 @@
   // maps `{event: callback}`).
   var eventsApi = function(iteratee, events, name, callback, opts) {
     var i = 0, names;
-    if (name && typeof name === 'object') {
-      // Handle event maps.
-      if (callback !== void 0 && 'context' in opts && opts.context === void 0) opts.context = callback;
-      for (names = _.keys(name); i < names.length ; i++) {
-        events = eventsApi(iteratee, events, names[i], name[names[i]], opts);
+    var map = typeof name === 'object' && name;
+    if (name && (map || eventSplitter.test(name))) {
+      if (map) {
+        if (callback !== void 0 && 'context' in opts && opts.context === void 0) opts.context = callback;
+        map = name;
+        names = _.keys(name);
+      } else {
+        map = {};
+        map[name] = callback;
+        names = [name];
       }
-    } else if (name && eventSplitter.test(name)) {
-      // Handle space separated event names by delegating them individually.
-      for (names = name.split(eventSplitter); i < names.length; i++) {
-        events = iteratee(events, names[i], callback, opts);
+      for (; i < names.length ; i++) {
+        name = names[i], callback = map[name];
+        if (eventSplitter.test(name)) {
+          // Handle space separated event names by delegating them individually.
+          for (var split = name.split(eventSplitter), j = 0; j < split.length; j++) {
+            events = eventsApi(iteratee, events, split[j], callback, opts);
+          }
+        } else {
+          events = eventsApi(iteratee, events, name, callback, opts);
+        }
       }
-    } else {
-      // Finally, standard events.
-      events = iteratee(events, name, callback, opts);
+      return events;
     }
-    return events;
+    // Finally, standard events.
+    return iteratee(events, name, callback, opts);
   };
 
   // Bind an event to a `callback` function. Passing `"all"` will bind
