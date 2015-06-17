@@ -230,7 +230,7 @@
     }), true);
   })
 
-  test("set and unset", 8, function() {
+  test("set and unset", 7, function() {
     var a = new Backbone.Model({id: 'id', foo: 1, bar: 2, baz: 3});
     var changeCount = 0;
     a.on("change:foo", function() { changeCount += 1; });
@@ -248,9 +248,6 @@
     equal(a.get('foo'), void 0, "Foo should have changed");
     delete a.validate;
     ok(changeCount == 2, "Change count should have incremented for unset.");
-
-    a.unset('id');
-    equal(a.id, undefined, "Unsetting the id should remove the id property.");
   });
 
   test("#2030 - set with failed validate, followed by another set triggers change", function () {
@@ -336,10 +333,10 @@
     var MongoModel = Backbone.Model.extend({idAttribute : '_id'});
     var model = new MongoModel({id: 'eye-dee', _id: 25, title: 'Model'});
     equal(model.get('id'), 'eye-dee');
-    equal(model.id, 25);
+    equal(model.id(), 25);
     equal(model.isNew(), false);
     model.unset('_id');
-    equal(model.id, undefined);
+    equal(model.id(), undefined);
     equal(model.isNew(), true);
   });
 
@@ -1307,6 +1304,13 @@
       ok(true);
     });
     model.set({a: true});
+  });
+
+  test("id", function() {
+    var model = new Backbone.Model({id: 1, _id: 2});
+    equal(model.id(), 1);
+    model.idAttribute = '_id';
+    equal(model.id(), 2);
   });
 
 })();
