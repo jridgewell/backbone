@@ -1441,7 +1441,7 @@
     equal(job.items.get(2).subItems.get(3).get('subName'), 'NewThree');
   });
 
-  test('_addReference binds all collection events & adds to the lookup hashes', 9, function() {
+  test('_addReference binds all collection events & adds to the lookup hashes', 11, function() {
 
     var calls = {add: 0, remove: 0};
 
@@ -1451,7 +1451,8 @@
         Backbone.Collection.prototype._addReference.apply(this, arguments);
         calls.add++;
         equal(model, this._byId[model.id()]);
-        equal(model, this._byId[model.cid]);
+        equal(model.id(), this._cidToId[model.cid]);
+        equal(model, this._byCid[model.cid]);
         equal(model._events.all.length, 1);
       },
 
@@ -1459,7 +1460,8 @@
         Backbone.Collection.prototype._removeReference.apply(this, arguments);
         calls.remove++;
         equal(this._byId[model.id()], void 0);
-        equal(this._byId[model.cid], void 0);
+        equal(this._cidToId[model.cid], void 0);
+        equal(this._byCid[model.cid], void 0);
         equal(model.collection, void 0);
         equal(model._events, void 0);
       }
@@ -1503,14 +1505,30 @@
     collection.create(model, {wait: true});
   });
 
-  test("modelId", function() {
+  test("modelId", 4, function() {
     var Stooge = Backbone.Model.extend();
     var StoogeCollection = Backbone.Collection.extend({model: Stooge});
+    var collection = new StoogeCollection([{id: 1}, {_id: 2}]);
 
     // Default to using `Collection::model::idAttribute`.
-    equal(StoogeCollection.prototype.modelId({id: 1}), 1);
+    equal(collection.modelId(collection.first()), 1);
+    equal(collection.modelId(collection.last()), void 0);
     Stooge.prototype.idAttribute = '_id';
-    equal(StoogeCollection.prototype.modelId({_id: 1}), 1);
+    equal(collection.modelId(collection.first()), void 0);
+    equal(collection.modelId(collection.last()), 2);
+  });
+
+  test("toId", 4, function() {
+    var Stooge = Backbone.Model.extend();
+    var StoogeCollection = Backbone.Collection.extend({model: Stooge});
+    var collection = new StoogeCollection([{id: 1}, {_id: 2}]);
+
+    // Default to using `Collection::model::idAttribute`.
+    equal(collection.toId(collection.first().attributes), 1);
+    equal(collection.toId(collection.last().attributes), void 0);
+    Stooge.prototype.idAttribute = '_id';
+    equal(collection.toId(collection.first().attributes), void 0);
+    equal(collection.toId(collection.last().attributes), 2);
   });
 
   test('Polymorphic models work with "simple" constructors', function () {
@@ -1529,7 +1547,7 @@
     equal(collection.at(1).id(), 2);
   });
 
-  test('Polymorphic models work with "advanced" constructors', function () {
+  test('Polymorphic models work with "advanced" constructors', 12, function () {
     var A = Backbone.Model.extend({idAttribute: '_id'});
     var B = Backbone.Model.extend({idAttribute: '_id'});
     var C = Backbone.Collection.extend({
@@ -1553,8 +1571,8 @@
         return attrs.type === 'a' ? new A(attrs) : new B(attrs);
       },
 
-      modelId: function (attrs) {
-        return attrs.type + '-' + attrs.id;
+      modelId: function (model) {
+        return model.get('type') + '-' + model.get('id');
       }
     });
     collection = new C([{id: 1, type: 'a'}, {id: 1, type: 'b'}]);
@@ -1563,6 +1581,12 @@
     equal(collection.at(0), collection.get('a-1'));
     ok(collection.at(1) instanceof B);
     equal(collection.at(1), collection.get('b-1'));
+
+    collection.toId = function(attrs) {
+      return attrs.type + '-' + attrs.id;
+    };
+    equal(collection.at(0), collection.get({type: 'a', id: 1}));
+    equal(collection.at(1), collection.get({type: 'b', id: 1}));
   });
 
   test("#3039: adding at index fires with correct at", 3, function() {
@@ -1669,6 +1693,22 @@
     });
     var collection = new Collection([{id: 1}]);
     collection.invoke('method', 1, 2, 3);
+  });
+
+  test("ids and cids don't clash", 4, function() {
+    var models = _.times(3, function(i) {
+      var model = new Backbone.Model({id: 'c' + (i + 1)});
+      model.cid = 'c' + i;
+      return model;
+    });
+    var collection = new Backbone.Collection(models);
+
+    var model = collection.get('c3');
+    equal(model.id(), 'c3');
+    equal(model.cid, 'c2');
+    model = collection.get(model);
+    equal(model.id(), 'c3');
+    equal(model.cid, 'c2');
   });
 
 })();
