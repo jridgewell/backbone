@@ -394,7 +394,7 @@
   var Model = Backbone.Model = function(attributes, options) {
     var attrs = attributes || {};
     options || (options = {});
-    this.cid = _.uniqueId(this.cidPrefix);
+    this.cid = _.uniqueId('c');
     this.attributes = {};
     if (options.collection) this.collection = options.collection;
     if (options.parse) attrs = this.parse(attrs, options) || {};
@@ -416,10 +416,6 @@
     // The default name for the JSON `id` attribute is `"id"`. MongoDB and
     // CouchDB users may want to set this to `"_id"`.
     idAttribute: 'id',
-
-    // The prefix is used to create the client id which is used to identify models locally.
-    // You may want to override this if you're experiencing name clashes with model ids.
-    cidPrefix: 'c',
 
     // Initialize is an empty function by default. Override it with your own
     // initialization logic.
@@ -966,8 +962,10 @@
     // Get a model from the set by id.
     get: function(obj) {
       if (obj == null) return void 0;
-      var id = this.modelId(this._isModel(obj) ? obj.attributes : obj);
-      return this._byId[obj] || this._byId[id] || this._byId[obj.cid];
+      if (this._isModel(obj)) {
+        return this._byCid[obj.cid] || this._byId[this.modelId(obj)];
+      }
+      return this._byId[obj] || this._byCid[obj] || this._byId[this.toId(obj)];
     },
 
     // Get the model at the given index.
@@ -1062,7 +1060,11 @@
     },
 
     // Define how to uniquely identify models in the collection.
-    modelId: function (attrs) {
+    modelId: function (model) {
+      return _.result(model, 'id');
+    },
+
+    toId: function(attrs) {
       return attrs[this.model.prototype.idAttribute || 'id'];
     },
 
@@ -1071,7 +1073,9 @@
     _reset: function() {
       this.length = 0;
       this.models = [];
-      this._byId  = {};
+      this._byId = {};
+      this._byCid = {};
+      this._cidToId = {};
     },
 
     // Prepare a hash of attributes (or other model) to be added to this
@@ -1119,17 +1123,23 @@
 
     // Internal method to create a model's ties to a collection.
     _addReference: function(model, options) {
-      this._byId[model.cid] = model;
-      var id = this.modelId(model.attributes);
-      if (id != null) this._byId[id] = model;
+      this._byCid[model.cid] = model;
+      var id = this.modelId(model);
+      if (id != null) {
+        this._cidToId[model.cid] = id;
+        this._byId[id] = model;
+      }
       model.on('all', this._onModelEvent, this);
     },
 
     // Internal method to sever a model's ties to a collection.
     _removeReference: function(model, options) {
-      delete this._byId[model.cid];
-      var id = this.modelId(model.attributes);
-      if (id != null) delete this._byId[id];
+      delete this._byCid[model.cid];
+      var id = this.modelId(model);
+      if (id != null) {
+        delete this._cidToId[model.cid];
+        delete this._byId[id];
+      }
       if (this === model.collection) delete model.collection;
       model.off('all', this._onModelEvent, this);
     },
@@ -1142,11 +1152,17 @@
       if ((event === 'add' || event === 'remove') && collection !== this) return;
       if (event === 'destroy') this.remove(model, options);
       if (event === 'change') {
-        var prevId = this.modelId(model.previousAttributes());
-        var id = this.modelId(model.attributes);
+        var prevId = this._cidToId[model.cid];
+        var id = this.modelId(model);
         if (prevId !== id) {
-          if (prevId != null) delete this._byId[prevId];
-          if (id != null) this._byId[id] = model;
+          if (id != null) {
+            this._cidToId[model.cid] = id;
+            this._byId[id] = model;
+          }
+          if (prevId != null) {
+            if (id == null) delete this._cidToId[model.cid];
+            delete this._byId[prevId];
+          }
         }
       }
       this.trigger.apply(this, arguments);
