@@ -453,10 +453,6 @@
       return !!_.iteratee(attrs, this)(this.attributes);
     },
 
-    id: function() {
-      return this.get(this.idAttribute);
-    },
-
     // Set a hash of model attributes on the object, firing `"change"`. This is
     // the core primitive operation of a model, updating the data and notifying
     // anyone who needs to know about the change in state. The heart of the beast.
@@ -504,6 +500,9 @@
         }
         unset ? delete current[attr] : current[attr] = val;
       }
+
+      // Update the `id`.
+      this.id = this.get(this.idAttribute);
 
       // Trigger all relevant attribute changes.
       if (!silent) {
@@ -689,7 +688,7 @@
         _.result(this.collection, 'url') ||
         urlError();
       if (this.isNew()) return base;
-      var id = _.result(this, 'id');
+      var id = this.get(this.idAttribute);
       return base.replace(/[^\/]$/, '$&/') + encodeURIComponent(id);
     },
 
@@ -1061,7 +1060,7 @@
 
     // Define how to uniquely identify models in the collection.
     modelId: function (model) {
-      return _.result(model, 'id');
+      return model.id;
     },
 
     toId: function(attrs) {

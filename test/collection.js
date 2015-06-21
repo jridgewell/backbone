@@ -21,12 +21,12 @@
     col.on('sort', function(){ counter++; });
     deepEqual(col.pluck('label'), ['a', 'b', 'c', 'd']);
     col.comparator = function(a, b) {
-      return a.id() > b.id() ? -1 : 1;
+      return a.id > b.id ? -1 : 1;
     };
     col.sort();
     equal(counter, 1);
     deepEqual(col.pluck('label'), ['a', 'b', 'c', 'd']);
-    col.comparator = function(model) { return model.id(); };
+    col.comparator = function(model) { return model.id; };
     col.sort();
     equal(counter, 2);
     deepEqual(col.pluck('label'), ['d', 'c', 'b', 'a']);
@@ -59,7 +59,7 @@
 
   test("clone preserves model and comparator", 3, function() {
     var Model = Backbone.Model.extend();
-    var comparator = function(model){ return model.id(); };
+    var comparator = function(model){ return model.id; };
 
     var collection = new Backbone.Collection([{id: 1}], {
       model: Model,
@@ -97,7 +97,7 @@
 
   test('get with "undefined" id', function() {
     var collection = new Backbone.Collection([{id: 1}, {id: 'undefined'}]);
-    equal(collection.get(1).id(), 1);
+    equal(collection.get(1).id, 1);
   });
 
   test("update index when id changes", 4, function() {
@@ -177,7 +177,7 @@
   test("add; at should have preference over comparator", 1, function() {
     var Col = Backbone.Collection.extend({
       comparator: function(a,b) {
-        return a.id() > b.id() ? -1 : 1;
+        return a.id > b.id ? -1 : 1;
       }
     });
 
@@ -287,12 +287,12 @@
       return -num;
     };
     col.comparator = function(a) {
-      return this.negative(a.id());
+      return this.negative(a.id);
     };
     col.add([{id: 1}, {id: 2}, {id: 3}]);
     deepEqual(col.pluck('id'), [3, 2, 1]);
     col.comparator = function(a, b) {
-      return this.negative(b.id()) - this.negative(a.id());
+      return this.negative(b.id) - this.negative(a.id);
     };
     col.sort();
     deepEqual(col.pluck('id'), [1, 2, 3]);
@@ -347,7 +347,7 @@
 
     result = col.remove({id: 6});
     equal(col.length, 2);
-    equal(result.id(), 6);
+    equal(result.id, 6);
 
     list = col.remove([{id: 2}, {id: 8}]);
     equal(col.length, 1);
@@ -625,8 +625,8 @@
 
   test("Underscore methods", 19, function() {
     equal(col.map(function(model){ return model.get('label'); }).join(' '), 'a b c d');
-    equal(col.any(function(model){ return model.id() === 100; }), false);
-    equal(col.any(function(model){ return model.id() === 0; }), true);
+    equal(col.any(function(model){ return model.id === 100; }), false);
+    equal(col.any(function(model){ return model.id === 0; }), true);
     equal(col.indexOf(b), 1);
     equal(col.size(), 4);
     equal(col.rest().length, 3);
@@ -634,20 +634,20 @@
     ok(_.include(col.rest(), d));
     ok(!col.isEmpty());
     ok(!_.include(col.without(d), d));
-    equal(col.max(function(model){ return model.id(); }).id(), 3);
-    equal(col.min(function(model){ return model.id(); }).id(), 0);
+    equal(col.max(function(model){ return model.id; }).id, 3);
+    equal(col.min(function(model){ return model.id; }).id, 0);
     deepEqual(col.chain()
-            .filter(function(o){ return o.id() % 2 === 0; })
-            .map(function(o){ return o.id() * 2; })
+            .filter(function(o){ return o.id % 2 === 0; })
+            .map(function(o){ return o.id * 2; })
             .value(),
          [4, 0]);
     deepEqual(col.difference([c, d]), [a, b]);
     ok(col.include(col.sample()));
     var first = col.first();
-    deepEqual(col.groupBy(function(model){ return model.id(); })[first.id()], [first]);
-    deepEqual(col.countBy(function(model){ return model.id(); }), {0: 1, 1: 1, 2: 1, 3: 1});
-    deepEqual(col.sortBy(function(model){ return model.id(); })[0], col.at(3));
-    ok(col.indexBy('id')[first.id()] === first);
+    deepEqual(col.groupBy(function(model){ return model.id; })[first.id], [first]);
+    deepEqual(col.countBy(function(model){ return model.id; }), {0: 1, 1: 1, 2: 1, 3: 1});
+    deepEqual(col.sortBy(function(model){ return model.id; })[0], col.at(3));
+    ok(col.indexBy('id')[first.id] === first);
   });
 
   test("Underscore methods with object-style and property-style iteratee", 22, function () {
@@ -745,7 +745,7 @@
     var origOpts = {};
     col.on("reset", function(col, opts){
       equal(origOpts.previousModels, undefined);
-      equal(opts.previousModels[0].id(), 1);
+      equal(opts.previousModels[0].id, 1);
     });
     col.reset([], origOpts);
   });
@@ -828,7 +828,7 @@
     equal(col.length, 1);
     col.add([{id: 1}, {id: 1}]);
     equal(col.length, 2);
-    equal(col.last().id(), 1);
+    equal(col.last().id, 1);
   });
 
   test("#964 - collection.get return inconsistent", 2, function() {
@@ -856,7 +856,7 @@
 
   test("falsy comparator", 4, function(){
     var Col = Backbone.Collection.extend({
-      comparator: function(model){ return model.id(); }
+      comparator: function(model){ return model.id; }
     });
     var col = new Col();
     var colFalse = new Col(null, {comparator: false});
@@ -975,7 +975,7 @@
     collection.on('add', function(model) {
       model.set({x: 3});
       collection.sort();
-      added.push(model.id());
+      added.push(model.id);
     });
     collection.add([{id: 1, x: 1}, {id: 2, x: 2}]);
     deepEqual(added, [1, 2]);
@@ -1164,9 +1164,9 @@
     var Collection = Backbone.Collection.extend({model: Model});
     var data = [{id: 1, child: {id: 2}}];
     var collection = new Collection(data);
-    equal(collection.first().id(), 1);
+    equal(collection.first().id, 1);
     collection.set(data);
-    equal(collection.first().id(), 1);
+    equal(collection.first().id, 1);
     collection.set([{id: 2, child: {id: 2}}].concat(data));
     deepEqual(collection.pluck('id'), [2, 1]);
   });
@@ -1450,8 +1450,8 @@
       _addReference: function(model) {
         Backbone.Collection.prototype._addReference.apply(this, arguments);
         calls.add++;
-        equal(model, this._byId[model.id()]);
-        equal(model.id(), this._cidToId[model.cid]);
+        equal(model, this._byId[model.id]);
+        equal(model.id, this._cidToId[model.cid]);
         equal(model, this._byCid[model.cid]);
         equal(model._events.all.length, 1);
       },
@@ -1459,7 +1459,7 @@
       _removeReference: function(model) {
         Backbone.Collection.prototype._removeReference.apply(this, arguments);
         calls.remove++;
-        equal(this._byId[model.id()], void 0);
+        equal(this._byId[model.id], void 0);
         equal(this._cidToId[model.cid], void 0);
         equal(this._byCid[model.cid], void 0);
         equal(model.collection, void 0);
@@ -1514,6 +1514,7 @@
     equal(collection.modelId(collection.first()), 1);
     equal(collection.modelId(collection.last()), void 0);
     Stooge.prototype.idAttribute = '_id';
+    collection.invoke('set', {});
     equal(collection.modelId(collection.first()), void 0);
     equal(collection.modelId(collection.last()), 2);
   });
@@ -1542,9 +1543,9 @@
     var collection = new C([{id: 1, type: 'a'}, {id: 2, type: 'b'}]);
     equal(collection.length, 2);
     ok(collection.at(0) instanceof A);
-    equal(collection.at(0).id(), 1);
+    equal(collection.at(0).id, 1);
     ok(collection.at(1) instanceof B);
-    equal(collection.at(1).id(), 2);
+    equal(collection.at(1).id, 2);
   });
 
   test('Polymorphic models work with "advanced" constructors', 12, function () {
@@ -1704,10 +1705,10 @@
     var collection = new Backbone.Collection(models);
 
     var model = collection.get('c3');
-    equal(model.id(), 'c3');
+    equal(model.id, 'c3');
     equal(model.cid, 'c2');
     model = collection.get(model);
-    equal(model.id(), 'c3');
+    equal(model.id, 'c3');
     equal(model.cid, 'c2');
   });
 
