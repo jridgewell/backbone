@@ -1298,15 +1298,19 @@
     // matching element, and re-assign it to `el`. Otherwise, create
     // an element from the `id`, `className` and `tagName` properties.
     _ensureElement: function() {
-      if (!this.el) {
-        var attrs = _.extend({}, _.result(this, 'attributes'));
-        if (this.id) attrs.id = _.result(this, 'id');
-        if (this.className) attrs['class'] = _.result(this, 'className');
-        this.setElement(this._createElement(_.result(this, 'tagName')));
-        this._setAttributes(attrs);
-      } else {
+      if (this.el) {
         this.setElement(_.result(this, 'el'));
+      } else {
+        this.setElement(this._createElement(_.result(this, 'tagName')));
+        this._setAttributes(this._attributes());
       }
+    },
+
+    _attributes: function() {
+      var attrs = _.extend({}, _.result(this, 'attributes'));
+      if (this.id) attrs.id = _.result(this, 'id');
+      if (this.className) attrs['class'] = _.result(this, 'className');
+      return attrs;
     },
 
     // Set attributes from a hash on this view's element.  Exposed for
